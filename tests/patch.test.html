@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Patch Module Tests</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+      --border: #2e3352; --accent: #6c63ff; --accent2: #00d4aa;
+      --danger: #ff5c5c; --warn: #f5a623; --text: #e0e4f5; --text-muted: #7b82a8;
+      --success: #00d4aa;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --font-sans: 'Pretendard', system-ui, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      padding: 24px 18px 56px;
+      min-height: 100vh;
+    }
+
+    .page { max-width: 1100px; margin: 0 auto; }
+
+    a.back {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: var(--accent); text-decoration: none; font-size: 13px; margin-bottom: 20px;
+    }
+    a.back:hover { text-decoration: underline; }
+
+    .hero {
+      background: linear-gradient(135deg, rgba(108,99,255,0.12), rgba(0,212,170,0.08));
+      border: 1px solid rgba(108,99,255,0.25);
+      border-radius: 20px; padding: 28px 24px; margin-bottom: 24px;
+    }
+    h1 {
+      font-size: clamp(22px, 3.5vw, 36px); font-weight: 800; letter-spacing: -0.02em;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; margin-bottom: 8px;
+    }
+    .subtitle { color: var(--text-muted); font-size: 14px; line-height: 1.7; max-width: 680px; }
+
+    /* ── 레이아웃 ── */
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.85fr);
+      gap: 20px; align-items: start;
+    }
+    @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+    /* ── 패널 공통 ── */
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; overflow: hidden;
+    }
+    .panel-head {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .panel-head h2 { font-size: 17px; font-weight: 700; }
+    .panel-head p { color: var(--text-muted); font-size: 12px; margin-top: 3px; }
+
+    .run-button {
+      border: none; border-radius: 999px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      color: #fff; padding: 10px 18px; font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: transform 160ms, opacity 160ms;
+      box-shadow: 0 6px 20px rgba(108,99,255,0.3);
+      white-space: nowrap;
+    }
+    .run-button:hover { transform: translateY(-1px); }
+    .run-button:disabled { opacity: 0.55; cursor: wait; transform: none; }
+
+    /* ── 테스트 결과 ── */
+    #test-results { padding: 20px; }
+
+    .summary {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px; border-radius: 14px; margin-bottom: 18px;
+      font-weight: 700; font-size: 15px;
+    }
+    .all-pass {
+      background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.25);
+      color: var(--accent2);
+    }
+    .has-fail {
+      background: rgba(255,92,92,0.1); border: 1px solid rgba(255,92,92,0.25);
+      color: var(--danger);
+    }
+    .fail-count { font-size: 13px; font-weight: 500; }
+
+    .result-list { display: flex; flex-direction: column; gap: 6px; }
+    .result-item {
+      display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start;
+      padding: 10px 14px; border-radius: 10px;
+      font-size: 12.5px; font-family: var(--font-mono); line-height: 1.55;
+    }
+    .result-item.pass {
+      background: rgba(0,212,170,0.07); border: 1px solid rgba(0,212,170,0.15);
+    }
+    .result-item.fail {
+      background: rgba(255,92,92,0.08); border: 1px solid rgba(255,92,92,0.2);
+    }
+    .result-error {
+      grid-column: 2; color: var(--danger); font-size: 11px; margin-top: 3px;
+    }
+
+    /* ── 미리보기 패널 ── */
+    .preview { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+
+    .preview-card {
+      border: 1px dashed rgba(108,99,255,0.3);
+      border-radius: 14px; padding: 14px;
+      background: rgba(108,99,255,0.04);
+    }
+    .preview-card h3 { font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
+    .preview-card p { color: var(--text-muted); font-size: 12px; line-height: 1.6; margin-bottom: 10px; }
+
+    .fixture {
+      min-height: 120px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--surface2);
+      padding: 12px; font-size: 13px;
+    }
+    .fixture > * { margin: 0; }
+    .fixture ul { padding-left: 18px; }
+    .fixture li { margin-bottom: 2px; }
+
+    /* patch 하이라이트 */
+    .fixture .patch-highlight {
+      outline: 2px solid rgba(0,212,170,0.6);
+      background: rgba(0,212,170,0.12) !important;
+      transition: outline 0.3s, background 0.3s;
+    }
+    .fixture .patch-remove {
+      outline: 2px solid rgba(255,92,92,0.6);
+      background: rgba(255,92,92,0.1) !important;
+      transition: outline 0.3s, background 0.3s;
+    }
+
+    .note {
+      color: var(--text-muted); font-size: 11.5px; line-height: 1.65;
+      padding: 10px 12px; border-radius: 10px;
+      background: rgba(245,166,35,0.07); border: 1px solid rgba(245,166,35,0.18);
+    }
+
+    /* ── 그룹 헤더 ── */
+    .group-header {
+      padding: 8px 0 4px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--text-muted);
+      border-bottom: 1px solid var(--border); margin-bottom: 6px; margin-top: 12px;
+    }
+    .group-header:first-child { margin-top: 0; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <a class="back" href="../index.html">← 메인으로 돌아가기</a>
+
+  <section class="hero">
+    <h1>Patch Module 검증</h1>
+    <p class="subtitle">
+      <code>applyPatches()</code>가 실제 DOM에 올바르게 반영되는지 검증합니다.
+      텍스트 갱신, 속성 추가·변경·제거, 노드 추가·삭제·교체,
+      하이라이트 클래스 부착, 복합 패치 적용까지 브라우저 환경에서 직접 확인합니다.
+    </p>
+  </section>
+
+  <section class="layout">
+    <!-- 테스트 결과 패널 -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>테스트 결과</h2>
+          <p>실행 버튼을 누르면 전체 테스트를 다시 돌립니다.</p>
+        </div>
+        <button id="run-tests" class="run-button" type="button">다시 실행</button>
+      </div>
+      <div id="test-results">테스트 준비 중...</div>
+    </div>
+
+    <!-- 미리보기 패널 -->
+    <aside class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>DOM 미리보기</h2>
+          <p>마지막 테스트 케이스 실행 결과입니다.</p>
+        </div>
+      </div>
+      <div class="preview">
+        <section class="preview-card">
+          <h3>실행 픽스처</h3>
+          <p>
+            <code>applyPatches()</code> 호출 후 실제 DOM 상태입니다.
+            초록 테두리 = patch-highlight, 빨간 테두리 = patch-remove.
+          </p>
+          <div id="fixture" class="fixture" aria-live="polite"></div>
+        </section>
+        <div class="note">
+          ⚠️ <code>REMOVE</code> 패치는 구현상 400ms 지연 뒤 실제 삭제됩니다.
+          해당 테스트는 <code>wait(460)</code>으로 완료를 기다린 뒤 검증합니다.
+        </div>
+      </div>
+    </aside>
+  </section>
+</div>
+
+<script type="module">
+// ── 모듈 임포트 ───────────────────────────────────────────────────────────────
+// diff         : 두 VDOM을 비교해서 패치 배열을 만든다 (diff.js)
+//
+// applyPatches : ★ 이 파일의 검증 대상 (patch.js의 유일한 export)
+//   patch.js 내부 구조:
+//     applyPatches(rootEl, patches)
+//       ├─ REMOVE 패치만 추출 → path 내림차순 정렬 후 먼저 처리 (인덱스 밀림 방지)
+//       └─ 나머지 패치(ADD/REPLACE/UPDATE_*/REMOVE_PROP) 순서대로 처리
+//           └─ applyPatch(rootEl, patch) 내부에서 타입별 분기:
+//               REPLACE    → getNodeByPath() → replaceChild()  → highlightNode()
+//               UPDATE_TEXT→ getNodeByPath() → textContent 변경 → highlightNode(부모)
+//               UPDATE_PROP→ getNodeByPath() → setDomProp()    → highlightNode()
+//               REMOVE_PROP→ getNodeByPath() → removeAttribute()→ highlightNode()
+//               ADD        → getNodeByPath(부모) → insertBefore/appendChild → highlightNode()
+//               REMOVE     → getNodeByPath() → highlightNode(isRemove=true)
+//                                            → setTimeout(removeChild, 400ms)
+//
+//   highlightNode(node, isRemove):
+//     - 텍스트 노드면 부모 엘리먼트로 올라감
+//     - isRemove=false → classList.add('patch-highlight'), 1200ms 후 제거
+//     - isRemove=true  → classList.add('patch-remove'),   1200ms 후 제거
+//
+//   getNodeByPath(rootEl, path):
+//     - path = [0, 1, 2] → rootEl의 0번 자식의 1번 자식의 2번 자식
+//     - 공백 텍스트 노드는 인덱스에서 제외 (getSignificantChildren)
+//
+// createElement / createText : 테스트용 VDOM 노드 생성 (vdom.js)
+// vdomToDom : VDOM → 실제 DOM 변환, 복합 패치 검증에서 기댓값 DOM 생성용 (vdom.js)
+import { diff }            from '../src/diff.js';
+import { applyPatches }    from '../src/patch.js';
+import { createElement, createText, vdomToDom } from '../src/vdom.js';
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 테스트 러너
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// [핵심 설계 원칙] describe/it은 테스트를 "즉시 실행"하지 않는다.
+// it()이 async 함수를 받기 때문에 describe 안에서 바로 실행하면
+// await 없이 Promise가 흘러가 버려 결과가 0/0이 된다.
+// → it()은 itQueue 배열에 등록만 하고,
+//   runTests 맨 끝의 for...of 루프에서 하나씩 await 하며 순서대로 실행한다.
+
+let passCount = 0;   // 통과한 테스트 수
+let failCount = 0;   // 실패한 테스트 수
+const results  = []; // 전체 결과 목록 (현재 renderResults에서 미사용, 확장용)
+const groups   = []; // describe 그룹 목록 { name, items[] }
+let currentGroup = null;              // describe 등록 중에 임시로 가리키는 그룹
+const itQueue  = []; // 실행 대기 중인 테스트 목록 { name, fn, group }
+
+// describe(그룹명, 콜백)
+// → 새 그룹을 만들고, 콜백을 동기 실행해서 내부 it()들을 itQueue에 등록한다
+function describe(name, fn) {
+  currentGroup = { name, items: [] }; // 새 그룹 객체 생성
+  groups.push(currentGroup);          // 결과 렌더링용 목록에 추가
+  fn();                               // 안에 있는 it() 호출들이 itQueue에 쌓임
+  currentGroup = null;                // 등록 완료 후 초기화
+}
+
+// it(테스트명, async 함수)
+// → 즉시 실행하지 않고 itQueue에 { 이름, 함수, 소속그룹 }만 넣어둔다
+function it(name, fn) {
+  itQueue.push({ name, fn, group: groups[groups.length - 1] });
+}
+
+// renderResults()
+// → groups 배열을 순회하며 pass/fail 결과를 HTML로 변환해 화면에 출력한다
+function renderResults() {
+  const container = document.getElementById('test-results');
+  if (!container) return;
+  const total   = passCount + failCount;
+  const allPass = failCount === 0;
+
+  // 요약 배너: 전체 통과/실패 수
+  const summaryHtml = `
+    <div class="summary ${allPass ? 'all-pass' : 'has-fail'}">
+      <span>${allPass ? '🎉' : '⚠️'}</span>
+      <strong>${passCount} / ${total} 통과</strong>
+      ${failCount > 0 ? `<span class="fail-count">${failCount}개 실패</span>` : ''}
+    </div>`;
+
+  // 그룹별 테스트 목록: pass는 초록, fail은 빨간 배경
+  const listHtml = groups.map(g => `
+    <div class="group-header">${g.name}</div>
+    <div class="result-list">
+      ${g.items.map(r => `
+        <div class="result-item ${r.pass ? 'pass' : 'fail'}">
+          <span>${r.pass ? '✅' : '❌'}</span>
+          <span>${r.message}</span>
+          ${r.error ? `<div class="result-error">${r.error}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+
+  container.innerHTML = summaryHtml + listHtml;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 테스트 헬퍼
+// ══════════════════════════════════════════════════════════════════════════════
+
+// el() : createElement의 단축 래퍼 — 엘리먼트 VDOM 노드를 간결하게 만든다
+//   예) el('li', { class: 'item' }, [txt('사과')])
+function el(tag, props = {}, children = [], key = null) {
+  return createElement(tag, props, children, key);
+}
+
+// txt() : createText의 단축 래퍼 — 텍스트 VDOM 노드를 만든다
+//   예) txt('안녕') → { type: 'text', value: '안녕' }
+function txt(value) { return createText(value); }
+
+// wait(ms) : ms 밀리초 뒤 resolve되는 Promise
+//   REMOVE 패치는 patch.js 내부에서 setTimeout 400ms 후 실제 삭제되므로
+//   그 완료를 기다릴 때 사용한다. 예) await wait(460)
+function wait(ms)   { return new Promise(r => setTimeout(r, ms)); }
+
+const fixture = document.getElementById('fixture'); // DOM이 마운트될 컨테이너
+
+// mount(vnode) : VDOM → 실제 DOM으로 변환해 fixture에 삽입하고 루트 노드 반환
+//   각 테스트 시작 전 fixture를 초기화하므로 테스트 간 DOM이 격리된다
+function mount(vnode) {
+  fixture.innerHTML = '';          // 이전 테스트 DOM 초기화
+  const dom = vdomToDom(vnode);    // VDOM → 실제 DOM 변환
+  fixture.appendChild(dom);        // 화면에 마운트
+  return dom;                      // 이후 검증에 사용할 루트 DOM 반환
+}
+
+// ── class 비교 헬퍼 ────────────────────────────────────────────────────────
+// [배경] patch.js의 highlightNode()는 UPDATE_PROP / REMOVE_PROP 적용 후
+//   대상 노드에 'patch-highlight' 클래스를 임시로 추가한다.
+//   그래서 getAttribute('class')로 비교하면 "new patch-highlight"처럼
+//   의도치 않은 값이 나와 테스트가 실패한다.
+//   아래 두 함수는 하이라이트 클래스를 제외하고 비교하기 위해 사용한다.
+
+const HIGHLIGHT_CLASSES = ['patch-highlight', 'patch-remove'];
+
+// userClass(el) : 하이라이트 클래스를 제외한 나머지 class 문자열 반환
+//   예) class="new patch-highlight" → "new"
+//       class="patch-highlight"     → null (원래 클래스가 없는 것)
+function userClass(el) {
+  return [...el.classList].filter(c => !HIGHLIGHT_CLASSES.includes(c)).join(' ') || null;
+}
+
+// hasUserClass(el) : 하이라이트 클래스 외에 다른 클래스가 존재하는지 반환
+//   REMOVE_PROP 후 원래 class가 제거됐는지 확인할 때 사용한다
+//   예) class="" or class="patch-highlight" → false (제거된 것으로 판단)
+function hasUserClass(el) {
+  return [...el.classList].some(c => !HIGHLIGHT_CLASSES.includes(c));
+}
+
+// normalizedHtml(el) : 하이라이트 클래스를 모두 제거한 outerHTML 문자열 반환
+//   복합 패치 테스트에서 "applyPatches 결과" vs "vdomToDom 결과"를
+//   문자열로 직접 비교할 때, 하이라이트 클래스 차이로 오탐이 나지 않도록 정규화한다
+function normalizedHtml(el) {
+  const clone = el.cloneNode(true); // 원본을 건드리지 않기 위해 깊은 복사
+  // 자손 노드에서 하이라이트 클래스 제거
+  clone.querySelectorAll('.patch-highlight, .patch-remove').forEach(n => {
+    n.classList.remove('patch-highlight', 'patch-remove');
+    if (!n.className) n.removeAttribute('class'); // 빈 class 속성도 제거
+  });
+  // 루트 노드 자체도 처리
+  if (clone.classList) {
+    clone.classList.remove('patch-highlight', 'patch-remove');
+    if (!clone.className) clone.removeAttribute('class');
+  }
+  // 공백 정규화 후 반환 (들여쓰기 차이로 인한 불일치 방지)
+  return clone.outerHTML.replace(/\s+/g, ' ').trim();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 테스트 스위트
+// ══════════════════════════════════════════════════════════════════════════════
+// runTests() 실행 흐름:
+//   1. 카운터·배열 초기화
+//   2. describe() 호출 → it()들이 itQueue에 등록됨 (아직 실행 안 함)
+//   3. for...of 루프에서 itQueue를 순서대로 await 실행
+//   4. renderResults()로 결과 화면에 출력
+
+async function runTests() {
+  // 이전 실행 결과를 전부 초기화 (다시 실행 버튼 대응)
+  passCount = 0; failCount = 0;
+  results.length = 0; groups.length = 0; itQueue.length = 0; currentGroup = null;
+  document.getElementById('test-results').innerHTML = '테스트 실행 중...';
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 1. UPDATE_TEXT
+  // ────────────────────────────────────────────────────────────────────────
+  // ── 1. UPDATE_TEXT ─────────────────────────────────────────────────────────
+  // [patch.js 연동]
+  // applyPatch()의 UPDATE_TEXT 분기:
+  //   const node = getNodeByPath(rootEl, path)  // path로 텍스트 노드 탐색
+  //   node.textContent = patch.value            // 텍스트 직접 교체
+  //   highlightNode(node.parentNode || node)    // 부모 엘리먼트에 patch-highlight 부착
+  describe('UPDATE_TEXT — 텍스트 갱신', () => {
+    it('텍스트 노드 값이 바뀐다', async () => {
+      const oldV = el('p', {}, [txt('이전')]);  // <p>이전</p>
+      const newV = el('p', {}, [txt('이후')]);  // <p>이후</p>
+      const root = mount(oldV);                 // fixture에 <p>이전</p> 마운트
+      // patch.js: getNodeByPath로 텍스트 노드 찾아 node.textContent = '이후' 실행
+      applyPatches(root, diff(oldV, newV));
+      if (root.textContent !== '이후')
+        throw new Error(`텍스트가 "이후"여야 합니다. 실제: "${root.textContent}"`);
+    });
+
+    it('UPDATE_TEXT 후 부모 엘리먼트에 patch-highlight가 붙는다', async () => {
+      const oldV = el('p', {}, [txt('hello')]);
+      const newV = el('p', {}, [txt('world')]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      // patch.js highlightNode(): 텍스트 노드는 classList가 없으므로
+      // 부모 엘리먼트(<p>)로 올라가 classList.add('patch-highlight') 실행
+      // 1200ms 후 setTimeout으로 자동 제거
+      if (!root.classList.contains('patch-highlight'))
+        throw new Error('부모 <p>에 patch-highlight 클래스가 없습니다.');
+    });
+
+    it('텍스트가 같으면 변경 없음', async () => {
+      const oldV = el('span', {}, [txt('동일')]);
+      const newV = el('span', {}, [txt('동일')]);
+      const root = mount(oldV);
+      // diff()가 패치를 0개 반환 → applyPatches()에 전달할 것이 없음
+      const patches = diff(oldV, newV);
+      if (patches.length !== 0)
+        throw new Error(`패치가 0개여야 합니다. 실제: ${patches.length}`);
+    });
+
+    it('중첩된 텍스트 갱신도 올바르게 반영된다', async () => {
+      // patch.js getNodeByPath(): path = [0, 0, 0] 순서로 자식을 타고 내려가
+      // div > p > strong 안의 텍스트 노드를 정확히 찾아 교체한다
+      const oldV = el('div', {}, [el('p', {}, [el('strong', {}, [txt('이전')])])]);
+      const newV = el('div', {}, [el('p', {}, [el('strong', {}, [txt('이후')])])]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      if (root.querySelector('strong').textContent !== '이후')
+        throw new Error('깊은 중첩 텍스트 갱신 실패');
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 2. UPDATE_PROP
+  // ────────────────────────────────────────────────────────────────────────
+  // ── 2. UPDATE_PROP ─────────────────────────────────────────────────────────
+  // [patch.js 연동]
+  // applyPatch()의 UPDATE_PROP 분기:
+  //   const node = getNodeByPath(rootEl, path)  // path로 엘리먼트 탐색
+  //   setDomProp(node, patch.key, patch.value)  // vdom.js의 setDomProp 호출
+  //   highlightNode(node)                       // 해당 노드에 patch-highlight 부착
+  //
+  // vdom.js의 setDomProp():
+  //   불리언 속성(disabled, checked 등) → setAttribute(key, '') 또는 removeAttribute
+  //   style 객체 → Object.assign(el.style, value)
+  //   그 외 → setAttribute(key, value)
+  describe('UPDATE_PROP — 속성 추가 및 변경', () => {
+    it('기존 속성 값이 변경된다', async () => {
+      const oldV = el('div', { class: 'old' });
+      const newV = el('div', { class: 'new' });
+      const root = mount(oldV);
+      // patch.js: setDomProp(node, 'class', 'new') → setAttribute('class', 'new')
+      // 이후 highlightNode()가 classList.add('patch-highlight') 추가
+      applyPatches(root, diff(oldV, newV));
+      // userClass(): getAttribute 대신 사용 — patch-highlight가 임시로 붙어
+      // getAttribute('class')는 "new patch-highlight"를 반환하기 때문
+      if (userClass(root) !== 'new')
+        throw new Error(`class가 "new"여야 합니다. 실제: "${userClass(root)}"`);
+    });
+
+    it('없던 속성이 추가된다', async () => {
+      const oldV = el('div', {});
+      const newV = el('div', { id: 'box', 'data-role': 'main' });
+      const root = mount(oldV);
+      // patch.js: UPDATE_PROP 패치 2개 → 각각 setDomProp() 호출
+      applyPatches(root, diff(oldV, newV));
+      if (root.getAttribute('id') !== 'box')
+        throw new Error('id="box" 속성이 추가되지 않았습니다.');
+      if (root.getAttribute('data-role') !== 'main')
+        throw new Error('data-role="main" 속성이 추가되지 않았습니다.');
+    });
+
+    it('불리언 속성 disabled가 추가된다', async () => {
+      const oldV = el('button', { type: 'button' }, [txt('저장')]);
+      const newV = el('button', { type: 'button', disabled: true }, [txt('저장')]);
+      const root = mount(oldV);
+      // patch.js → setDomProp(node, 'disabled', true)
+      // vdom.js setDomProp(): booleanAttrs 배열에 'disabled'가 포함되어 있어
+      // setAttribute('disabled', '') 로 처리됨
+      applyPatches(root, diff(oldV, newV));
+      if (!root.hasAttribute('disabled'))
+        throw new Error('disabled 속성이 추가되지 않았습니다.');
+    });
+
+    it('속성 변경 노드에 patch-highlight가 붙는다', async () => {
+      const oldV = el('span', { class: 'a' });
+      const newV = el('span', { class: 'b' });
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      // patch.js highlightNode(node): 엘리먼트 노드이므로 바로
+      // classList.add('patch-highlight') 실행, 1200ms 후 자동 제거
+      if (!root.classList.contains('patch-highlight'))
+        throw new Error('UPDATE_PROP 대상에 patch-highlight가 없습니다.');
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 3. REMOVE_PROP
+  // ────────────────────────────────────────────────────────────────────────
+  // ── 3. REMOVE_PROP ─────────────────────────────────────────────────────────
+  // [patch.js 연동]
+  // applyPatch()의 REMOVE_PROP 분기:
+  //   const node = getNodeByPath(rootEl, path)  // path로 엘리먼트 탐색
+  //   node.removeAttribute(patch.key)           // 속성 직접 제거
+  //   highlightNode(node)                       // patch-highlight 부착
+  describe('REMOVE_PROP — 속성 제거', () => {
+    it('기존 속성이 제거된다', async () => {
+      const oldV = el('div', { class: 'box', id: 'x' });
+      const newV = el('div', { id: 'x' });  // class 없음 → REMOVE_PROP 패치 생성
+      const root = mount(oldV);
+      // patch.js: node.removeAttribute('class') 실행
+      // 이후 highlightNode()가 classList.add('patch-highlight') 추가
+      applyPatches(root, diff(oldV, newV));
+      // hasUserClass(): removeAttribute로 'class'는 사라졌지만
+      // highlightNode()가 'patch-highlight'를 다시 추가하므로
+      // hasAttribute('class')는 true → 대신 hasUserClass()로 실제 클래스 여부 확인
+      if (hasUserClass(root))
+        throw new Error('class 속성이 제거되지 않았습니다.');
+      if (root.getAttribute('id') !== 'x')
+        throw new Error('id="x" 속성이 유지되어야 합니다.');
+    });
+
+    it('여러 속성이 한번에 제거된다', async () => {
+      const oldV = el('input', { type: 'checkbox', checked: true, class: 'checked' });
+      const newV = el('input', { type: 'checkbox' });
+      const root = mount(oldV);
+      // patch.js: REMOVE_PROP 패치 2개 생성 → removeAttribute('checked'), removeAttribute('class') 순서대로 실행
+      applyPatches(root, diff(oldV, newV));
+      if (root.hasAttribute('checked'))
+        throw new Error('checked 속성이 남아 있습니다.');
+      if (hasUserClass(root))
+        throw new Error('class 속성이 남아 있습니다.');
+    });
+
+    it('REMOVE_PROP 대상에 patch-highlight가 붙는다', async () => {
+      const oldV = el('p', { class: 'old' });
+      const newV = el('p', {});
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      // patch.js: removeAttribute 후 highlightNode(node) 호출
+      // → classList.add('patch-highlight'), 1200ms 후 자동 제거
+      if (!root.classList.contains('patch-highlight'))
+        throw new Error('REMOVE_PROP 대상에 patch-highlight가 없습니다.');
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 4. ADD
+  // ────────────────────────────────────────────────────────────────────────
+  // ── 4. ADD ─────────────────────────────────────────────────────────────────
+  // [patch.js 연동]
+  // applyPatch()의 ADD 분기:
+  //   parentPath = path.slice(0, -1)           // 부모 경로 추출
+  //   childIndex = path[path.length - 1]       // 삽입할 인덱스
+  //   parent = getNodeByPath(rootEl, parentPath)
+  //   newDom = vdomToDom(patch.newNode)        // 새 VDOM → 실제 DOM 변환
+  //   refNode = parent.childNodes[childIndex]
+  //   refNode ? insertBefore(newDom, refNode)  // 중간 삽입
+  //           : appendChild(newDom)            // 끝에 추가
+  //   highlightNode(newDom)                    // 새 노드에 patch-highlight 부착
+  describe('ADD — 노드 추가', () => {
+    it('자식 끝에 노드가 추가된다', async () => {
+      const oldV = el('ul', {}, [el('li', {}, [txt('A')])]);
+      const newV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])]);
+      const root = mount(oldV);
+      // patch.js: refNode = childNodes[1] = null → appendChild(newDom) 실행
+      applyPatches(root, diff(oldV, newV));
+      const items = [...root.querySelectorAll('li')].map(n => n.textContent);
+      if (items.join(',') !== 'A,B')
+        throw new Error(`항목이 A,B여야 합니다. 실제: ${items.join(',')}`);
+    });
+
+    it('key 기반 리스트 중간에 노드가 삽입된다', async () => {
+      // diff.js가 data-key로 A↔A, C↔C 매칭 후 B는 신규 → ADD 패치 path=[1]
+      // patch.js: refNode = childNodes[1] (C 노드) → insertBefore(B, C) 실행
+      const oldV = el('ul', {}, [
+        el('li', { 'data-key': 'a' }, [txt('A')]),
+        el('li', { 'data-key': 'c' }, [txt('C')]),
+      ]);
+      const newV = el('ul', {}, [
+        el('li', { 'data-key': 'a' }, [txt('A')]),
+        el('li', { 'data-key': 'b' }, [txt('B')]),
+        el('li', { 'data-key': 'c' }, [txt('C')]),
+      ]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      await wait(480);
+      const items = [...root.querySelectorAll('li')].map(n => n.textContent);
+      if (items.join(',') !== 'A,B,C')
+        throw new Error(`중간 삽입 후 A,B,C여야 합니다. 실제: ${items.join(',')}`);
+    });
+
+    it('추가된 노드에 patch-highlight가 붙는다', async () => {
+      const oldV = el('ul', {}, [el('li', {}, [txt('A')])]);
+      const newV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      const items = [...root.querySelectorAll('li')];
+      const added = items.find(n => n.textContent === 'B');
+      if (!added) throw new Error('추가된 <li>B</li>를 찾을 수 없습니다.');
+      // patch.js: appendChild 후 highlightNode(newDom) → classList.add('patch-highlight')
+      if (!added.classList.contains('patch-highlight'))
+        throw new Error('추가된 노드에 patch-highlight가 없습니다.');
+    });
+
+    it('빈 부모에 첫 자식이 추가된다', async () => {
+      const oldV = el('div', {});
+      const newV = el('div', {}, [el('p', {}, [txt('새 단락')])]);
+      const root = mount(oldV);
+      // patch.js: childNodes가 비어있어 refNode = null → appendChild(newDom) 실행
+      applyPatches(root, diff(oldV, newV));
+      if (!root.querySelector('p'))
+        throw new Error('p 노드가 추가되지 않았습니다.');
+      if (root.querySelector('p').textContent !== '새 단락')
+        throw new Error('추가된 p 텍스트가 다릅니다.');
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 5. REMOVE
+  // ────────────────────────────────────────────────────────────────────────
+  // ── 5. REMOVE ──────────────────────────────────────────────────────────────
+  // [patch.js 연동]
+  // applyPatches()에서 REMOVE 패치는 특별 처리:
+  //   removes = patches.filter(p => p.type === 'REMOVE')
+  //   sortedRemoves = removes.sort(path 내림차순)  // 인덱스 밀림 방지
+  //   → 뒤 인덱스부터 제거해야 앞 노드의 인덱스가 안 밀림
+  //
+  // applyPatch()의 REMOVE 분기:
+  //   node = getNodeByPath(rootEl, path)
+  //   highlightNode(node, isRemove=true)
+  //     → classList.add('patch-remove'), 1200ms 후 자동 제거
+  //   setTimeout(() => node.parentNode?.removeChild(node), 400)
+  //     → 400ms 후 실제 DOM에서 삭제
+  describe('REMOVE — 노드 삭제', () => {
+    it('삭제 직후 patch-remove 클래스가 붙는다', async () => {
+      const oldV = el('ul', {}, [
+        el('li', { 'data-key': 'a' }, [txt('A')]),
+        el('li', { 'data-key': 'b' }, [txt('B')]),
+      ]);
+      const newV = el('ul', {}, [el('li', { 'data-key': 'a' }, [txt('A')])]);
+      const root = mount(oldV);
+      // patch.js: highlightNode(node, true) → classList.add('patch-remove') 즉시 실행
+      // setTimeout(removeChild, 400) 은 아직 실행 안 됨
+      applyPatches(root, diff(oldV, newV));
+      const removing = root.querySelector('li[data-key="b"]');
+      if (!removing)
+        throw new Error('삭제 대상 노드를 찾을 수 없습니다.');
+      if (!removing.classList.contains('patch-remove'))
+        throw new Error('삭제 대상 노드에 patch-remove 클래스가 없습니다.');
+    });
+
+    it('400ms 지연 뒤 노드가 실제로 제거된다', async () => {
+      const oldV = el('ul', {}, [
+        el('li', { 'data-key': 'a' }, [txt('A')]),
+        el('li', { 'data-key': 'b' }, [txt('B')]),
+      ]);
+      const newV = el('ul', {}, [el('li', { 'data-key': 'a' }, [txt('A')])]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      // patch.js의 setTimeout(..., 400) 완료를 기다림 (여유 60ms 추가)
+      await wait(460);
+      // 400ms 경과 후 node.parentNode?.removeChild(node) 실행 완료
+      if (root.querySelector('li[data-key="b"]'))
+        throw new Error('지연 후에도 삭제 대상 노드가 남아 있습니다.');
+      const items = [...root.querySelectorAll('li')].map(n => n.textContent);
+      if (items.join(',') !== 'A')
+        throw new Error(`A만 남아야 합니다. 실제: ${items.join(',')}`);
+    });
+
+    it('마지막 자식 삭제 후 부모가 비어있다', async () => {
+      const oldV = el('ul', {}, [el('li', {}, [txt('Only')])]);
+      const newV = el('ul', {});
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      await wait(460); // patch.js setTimeout 완료 대기
+      if (root.childNodes.length !== 0)
+        throw new Error(`부모가 비어있어야 합니다. childNodes: ${root.childNodes.length}`);
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 6. REPLACE
+  // ────────────────────────────────────────────────────────────────────────
+  // ── 6. REPLACE ─────────────────────────────────────────────────────────────
+  // [patch.js 연동]
+  // applyPatch()의 REPLACE 분기:
+  //   node = getNodeByPath(rootEl, path)       // 교체될 기존 노드 탐색
+  //   newDom = vdomToDom(patch.newNode)        // 새 VDOM → 실제 DOM 변환
+  //   node.parentNode?.replaceChild(newDom, node) // 기존 노드를 새 노드로 교체
+  //   highlightNode(newDom)                    // 새 노드에 patch-highlight 부착
+  describe('REPLACE — 노드 교체', () => {
+    it('태그가 다른 경우 노드가 교체된다', async () => {
+      const oldV = el('section', {}, [el('p', { class: 'from' }, [txt('내용')])]);
+      const newV = el('section', {}, [el('strong', { class: 'to' }, [txt('내용')])]);
+      const root = mount(oldV);
+      // patch.js: vdomToDom(strong 노드) 생성 후 replaceChild(strong, p) 실행
+      applyPatches(root, diff(oldV, newV));
+      if (!root.querySelector('strong'))
+        throw new Error('strong 노드로 교체되지 않았습니다.');
+      if (root.querySelector('p'))
+        throw new Error('이전 p 노드가 남아 있습니다.');
+    });
+
+    it('REPLACE 후 새 노드에 patch-highlight가 붙는다', async () => {
+      const oldV = el('div', {}, [el('p', {}, [txt('before')])]);
+      const newV = el('div', {}, [el('span', {}, [txt('after')])]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      const newSpan = root.querySelector('span');
+      if (!newSpan)
+        throw new Error('span으로 교체되지 않았습니다.');
+      // patch.js: replaceChild 후 highlightNode(newDom) → classList.add('patch-highlight')
+      if (!newSpan.classList.contains('patch-highlight'))
+        throw new Error('교체된 span에 patch-highlight 클래스가 없습니다.');
+    });
+
+    it('text → element 타입 변경도 교체된다', async () => {
+      // diff.js: oldNode.type('text') !== newNode.type('element') → REPLACE 패치 생성
+      // patch.js: replaceChild로 텍스트 노드 자리에 span 엘리먼트 삽입
+      const patches = diff(createText('글자'), el('span', {}, [txt('글자')]));
+      if (!patches.some(p => p.type === 'REPLACE'))
+        throw new Error('text→element 타입 불일치에 REPLACE가 없습니다.');
+    });
+
+    it('REPLACE 직후 기존 자식이 없어지고 새 자식이 생긴다', async () => {
+      // patch.js: vdomToDom(ol + 자식들) 을 한 번에 생성해 replaceChild로 교체
+      // 자식 트리 전체가 새로 만들어지므로 기존 ul과 그 자식들은 DOM에서 사라짐
+      const oldV = el('div', {}, [el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])])]);
+      const newV = el('div', {}, [el('ol', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])])]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      if (root.querySelector('ul')) throw new Error('ul이 남아 있습니다.');
+      if (!root.querySelector('ol')) throw new Error('ol로 교체되지 않았습니다.');
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 7. 복합 패치
+  // ────────────────────────────────────────────────────────────────────────
+  // ── 7. 복합 패치 ───────────────────────────────────────────────────────────
+  // [patch.js 연동]
+  // applyPatches()는 패치 배열 전체를 처리한다:
+  //   1) REMOVE 패치 → path 내림차순 정렬 후 먼저 실행 (인덱스 밀림 방지)
+  //   2) 나머지 패치 → 배열 순서대로 실행
+  // diff()가 여러 변경을 감지하면 패치 배열에 여러 객체가 쌓이고,
+  // applyPatches()가 타입별 분기로 하나씩 처리한다.
+  describe('복합 패치 — 여러 변경 동시 적용', () => {
+    it('텍스트 + 속성 변경이 함께 반영된다', async () => {
+      // 한 엘리먼트의 텍스트와 class가 동시에 바뀌는 경우
+      const oldV = el('div', { id: 'a', class: 'draft' }, [txt('이전 텍스트')]);
+      const newV = el('div', { id: 'a', class: 'live' }, [txt('새 텍스트')]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      if (root.textContent !== '새 텍스트')
+        throw new Error('텍스트가 갱신되지 않았습니다.');
+      if (userClass(root) !== 'live')
+        throw new Error('class가 live로 변경되지 않았습니다.');
+    });
+
+    it('최종 DOM이 새 VDOM으로 렌더링한 DOM과 일치한다', async () => {
+      // 가장 강력한 검증:
+      // applyPatches(root, diff(old, new)) 결과와
+      // vdomToDom(new)로 처음부터 새로 만든 DOM이 동일해야 한다
+      const oldV = el('div', { id: 'card', class: 'draft' }, [
+        el('h2', {}, [txt('초안')]),
+        el('p', {}, [txt('설명 전')]),
+        el('ul', {}, [
+          el('li', { 'data-key': '1' }, [txt('하나')]),
+          el('li', { 'data-key': '2' }, [txt('둘')]),   // 제거될 항목
+        ]),
+      ]);
+      const newV = el('div', { id: 'card', class: 'published', 'data-state': 'live' }, [
+        el('h2', {}, [txt('발행 완료')]),               // 텍스트 변경
+        el('p', { class: 'summary' }, [txt('설명 후')]),// 텍스트 + 속성 변경
+        el('ul', {}, [
+          el('li', { 'data-key': '1' }, [txt('하나')]),
+          el('li', { 'data-key': '3' }, [txt('셋')]),   // 새로 추가
+        ]),
+      ]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      await wait(480); // REMOVE 지연 완료 대기
+
+      // normalizedHtml()으로 하이라이트 클래스 제거 후 문자열 비교
+      const expected = vdomToDom(newV);
+      if (normalizedHtml(root) !== normalizedHtml(expected)) {
+        throw new Error(
+          `DOM 불일치\nactual:   ${normalizedHtml(root)}\nexpected: ${normalizedHtml(expected)}`
+        );
+      }
+    });
+
+    it('속성 추가·변경·제거가 동시에 처리된다', async () => {
+      // class 변경 + title 제거 + aria-label 추가가 한꺼번에
+      const oldV = el('div', { id: 'x', class: 'old', title: 'remove-me' });
+      const newV = el('div', { id: 'x', class: 'new', 'aria-label': 'added' });
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      if (userClass(root) !== 'new')
+        throw new Error('class가 new로 변경되지 않았습니다.');
+      if (root.hasAttribute('title'))
+        throw new Error('title이 제거되지 않았습니다.');
+      if (root.getAttribute('aria-label') !== 'added')
+        throw new Error('aria-label이 추가되지 않았습니다.');
+    });
+
+    it('ADD + REMOVE가 같은 부모에서 함께 처리된다', async () => {
+      // B를 제거하고 C를 추가하는 동시 변경
+      const oldV = el('ul', {}, [
+        el('li', { 'data-key': 'a' }, [txt('A')]),
+        el('li', { 'data-key': 'b' }, [txt('B')]), // 제거
+      ]);
+      const newV = el('ul', {}, [
+        el('li', { 'data-key': 'a' }, [txt('A')]),
+        el('li', { 'data-key': 'c' }, [txt('C')]), // 추가
+      ]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      await wait(480); // REMOVE 지연 완료 대기
+      const items = [...root.querySelectorAll('li')].map(n => n.textContent);
+      if (!items.includes('A')) throw new Error('A가 없습니다.');
+      if (!items.includes('C')) throw new Error('C가 추가되지 않았습니다.');
+      if (items.includes('B')) throw new Error('B가 제거되지 않았습니다.');
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 8. 엣지 케이스
+  // ────────────────────────────────────────────────────────────────────────
+  // ── 8. 엣지 케이스 ─────────────────────────────────────────────────────────
+  // [patch.js 연동]
+  // applyPatches()는 빈 배열을 받아도 for 루프를 돌지 않으므로 DOM 무변경
+  // getNodeByPath()는 path=[]이면 rootEl 자체를 반환, 깊은 경로도 순회 처리
+  // getSignificantChildren()으로 공백 텍스트를 인덱스에서 제외해 정확한 탐색 보장
+  describe('엣지 케이스', () => {
+    it('패치 배열이 비어있으면 DOM이 변하지 않는다', async () => {
+      const v = el('div', { id: 'same' }, [txt('변화 없음')]);
+      const root = mount(v);
+      const before = root.outerHTML; // 현재 상태 저장
+      applyPatches(root, []);        // 빈 배열 → 아무것도 안 해야 함
+      if (root.outerHTML !== before)
+        throw new Error('빈 패치 배열인데 DOM이 변경되었습니다.');
+    });
+
+    it('깊게 중첩된 텍스트 변경이 반영된다', async () => {
+      // path = [0, 0, 0] 처럼 깊은 경로도 getNodeByPath()가 정확히 탐색한다
+      const oldV = el('div', {}, [el('div', {}, [el('div', {}, [txt('deep')])])]);
+      const newV = el('div', {}, [el('div', {}, [el('div', {}, [txt('changed')])])]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      const deepDiv = root.querySelector('div > div > div');
+      if (!deepDiv || deepDiv.textContent !== 'changed')
+        throw new Error(`깊은 중첩 텍스트 변경 실패. 실제: "${deepDiv?.textContent}"`);
+    });
+
+    it('props만 바뀌고 구조는 유지된다', async () => {
+      // 속성만 수정될 때 자식 DOM 구조가 건드려지지 않는지 확인
+      const oldV = el('article', { class: 'a', 'data-id': '1' }, [
+        el('h3', {}, [txt('제목')]),
+      ]);
+      const newV = el('article', { class: 'b', 'data-id': '1' }, [
+        el('h3', {}, [txt('제목')]),
+      ]);
+      const root = mount(oldV);
+      applyPatches(root, diff(oldV, newV));
+      if (userClass(root) !== 'b')
+        throw new Error('class 변경 실패');
+      if (!root.querySelector('h3') || root.querySelector('h3').textContent !== '제목')
+        throw new Error('h3 구조가 변형됐습니다.');
+    });
+
+    it('동일 트리에 applyPatches를 해도 DOM이 바뀌지 않는다', async () => {
+      // diff(v, v의 깊은 복사본) → 패치 0개 → DOM 변화 없어야 함
+      const v = el('div', { id: 'x' }, [el('span', {}, [txt('hello')])]);
+      const root = mount(v);
+      const vCopy = JSON.parse(JSON.stringify(v)); // 깊은 복사 (내용은 동일)
+      const before = normalizedHtml(root);
+      applyPatches(root, diff(v, vCopy));          // 패치가 0개이므로 아무 변화 없어야 함
+      if (normalizedHtml(root) !== before)
+        throw new Error('동일 트리인데 DOM이 바뀌었습니다.');
+    });
+  });
+
+  // ── 큐 실행 루프 ─────────────────────────────────────────────────────────
+  // describe() 단계에서 itQueue에 쌓아둔 테스트를 여기서 순서대로 실행한다.
+  // await fn()으로 각 테스트가 완전히 끝날 때까지 기다린 뒤 다음으로 넘어간다.
+  // → wait(460) 같은 비동기 대기도 올바르게 처리된다.
+  for (const { name, fn, group } of itQueue) {
+    try {
+      await fn();      // 테스트 함수 실행 (async 완료까지 대기)
+      passCount++;
+      const item = { pass: true, message: name };
+      results.push(item);
+      group.items.push(item); // 소속 그룹에도 결과 기록
+    } catch (err) {
+      // it() 내부에서 throw가 발생하면 여기서 잡아 실패로 기록
+      failCount++;
+      const item = { pass: false, message: name, error: err.message };
+      results.push(item);
+      group.items.push(item);
+      console.error(`❌ ${name}:`, err);
+    }
+  }
+
+  // 모든 테스트 완료 후 결과를 화면에 출력
+  renderResults();
+  const runBtn = document.getElementById('run-tests');
+  runBtn.disabled = false;
+  runBtn.textContent = '다시 실행';
+}
+
+// ── 초기 실행 + 버튼 바인딩 ──────────────────────────────────────────────────
+// 페이지 로드 시 자동 실행, 버튼 클릭 시 재실행
+const runBtn = document.getElementById('run-tests');
+runBtn.disabled = true; // 실행 중에는 버튼 비활성화
+
+runBtn.addEventListener('click', () => {
+  runBtn.disabled = true;
+  runBtn.textContent = '실행 중...';
+  runTests();
+});
+
+runTests();
+</script>
+</body>
+</html>
