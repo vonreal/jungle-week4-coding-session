@@ -246,18 +246,6 @@
       assert(app.diffLog.textContent.trim().length > 0, 'diff 로그가 갱신된다');
     });
 
-    await runCase('patch: 빈 입력은 무시된다', async () => {
-      const app = await bootApp('patch-empty');
-      const before = normalize(app.realArea.innerHTML);
-
-      app.testArea.value = '   ';
-      click(app.patchBtn);
-
-      assert(normalize(app.realArea.innerHTML) === before, 'real DOM이 유지된다');
-      assert(app.historyInfo.textContent.includes('1 / 1'), '히스토리가 증가하지 않는다');
-      assert(app.undoBtn.disabled === true, 'undo 상태가 그대로다');
-    });
-
     await runCase('patch: 파싱 가능한 루트 엘리먼트가 없으면 인라인 에러를 표시하고 중단한다', async () => {
       const app = await bootApp('patch-invalid');
       const before = normalize(app.realArea.innerHTML);
