@@ -76,9 +76,9 @@ function applyPatch(rootEl, patch) {
 
     const newDom = vdomToDom(patch.newNode);
 
-    // 엘리먼트 자식만 (텍스트 노드 제외) 인덱스 계산
-    const elementChildren = Array.from(parent.childNodes);
-    const refNode = elementChildren[childIndex] ?? null;
+    // 의미있는 자식만 기준으로 인덱스 계산 (공백 텍스트 노드 제외)
+    const significantChildren = getSignificantChildren(parent);
+    const refNode = significantChildren[childIndex] ?? null;
 
     if (refNode) {
       parent.insertBefore(newDom, refNode);
