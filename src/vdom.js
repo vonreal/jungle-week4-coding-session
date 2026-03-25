@@ -118,6 +118,20 @@ export function setDomProp(el, key, value) {
   }
 }
 
+function cloneValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(cloneValue);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [key, cloneValue(nestedValue)])
+    );
+  }
+
+  return value;
+}
+
 /**
  * VDOM 깊은 복사
  */
@@ -127,7 +141,7 @@ export function cloneVdom(vnode) {
   return {
     type: 'element',
     tag: vnode.tag,
-    props: { ...vnode.props },
+    props: cloneValue(vnode.props || {}),
     key: vnode.key,
     children: (vnode.children || []).map(cloneVdom),
   };
