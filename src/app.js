@@ -92,6 +92,12 @@ function onPatch() {
 
   // Diff
   const patches = diff(currentVdom, newVdom);
+  if (patches.length === 0) {
+    testArea.value = htmlSource;
+    setDiffLog([]);
+    renderVdomTree(currentVdom, null);
+    return;
+  }
 
   // Patch 적용
   applyPatches(realArea.firstElementChild || realArea, patches);
