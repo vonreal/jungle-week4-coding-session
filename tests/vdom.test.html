@@ -7,9 +7,9 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #f6f8fb; --surface: #ffffff; --surface2: #eef3ff;
-      --border: #d6deea; --accent: #2952cc; --accent2: #0f9d7a;
-      --danger: #d14343; --text: #1f2937; --text-muted: #6b7280;
+      --bg: #f6f8fb; --surface: #ffffff; --surface2: #f0f2fa;
+      --border: #dde1ef; --accent: #5b52e8; --accent2: #00a884;
+      --danger: #e03c3c; --warn: #d97706; --text: #1a1d2e; --text-muted: #6b7394;
       --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
       --font-sans: 'Pretendard', system-ui, sans-serif;
     }
@@ -20,7 +20,7 @@
     a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
     a.back:hover { text-decoration: underline; }
 
-    .hero { background: linear-gradient(135deg, rgba(41,82,204,0.07), rgba(15,157,122,0.05)); border: 1px solid rgba(41,82,204,0.15); border-radius: 20px; padding: 24px; margin-bottom: 24px; }
+    .hero { background: linear-gradient(135deg, rgba(91,82,232,0.07), rgba(0,168,132,0.05)); border: 1px solid rgba(91,82,232,0.18); border-radius: 20px; padding: 24px; margin-bottom: 24px; }
     h1 { font-size: clamp(20px, 3vw, 32px); font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 6px; }
     .subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
 
@@ -50,7 +50,7 @@
 
     /* ── 미리보기 패널 ── */
     .preview { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-    .preview-card { border: 1px dashed rgba(41,82,204,0.25); border-radius: 12px; padding: 12px; background: rgba(41,82,204,0.02); }
+    .preview-card { border: 1px dashed rgba(91,82,232,0.25); border-radius: 12px; padding: 12px; background: rgba(91,82,232,0.02); }
     .preview-card h3 { font-size: 12px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
     .preview-card p { color: var(--text-muted); font-size: 12px; line-height: 1.6; margin-bottom: 8px; }
     .fixture { min-height: 72px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); padding: 10px 12px; font-size: 13px; word-break: break-word; }
