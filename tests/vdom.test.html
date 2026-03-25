@@ -115,13 +115,61 @@
 <script type="module">
 import { createElement, createText, domToVdom, vdomToDom as _vdomToDom, cloneVdom } from '../src/vdom.js';
 import { init } from '../src/app.js';
-import { describe, it as _it, assertEqual, renderResults } from './test-runner.js';
 
-// 실행 중인 테스트 이름을 미리보기 패널에 업데이트
+let passCount = 0, failCount = 0;
+const groups = [], itQueue = [];
+let _currentGroup = null;
+
+function describe(name, fn) {
+  _currentGroup = { name, items: [] };
+  groups.push(_currentGroup);
+  fn();
+  _currentGroup = null;
+}
+
 function it(name, fn) {
-  const el = document.getElementById('current-test');
-  if (el) el.textContent = name;
-  return _it(name, fn);
+  itQueue.push({ name, fn, group: groups[groups.length - 1] });
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object' || a === null || b === null) return false;
+  const keysA = Object.keys(a), keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every(k => deepEqual(a[k], b[k]));
+}
+
+function assertEqual(actual, expected, message) {
+  if (!deepEqual(actual, expected)) throw new Error(message);
+}
+
+function renderResults() {
+  const container = document.getElementById('test-results');
+  if (!container) return;
+  const total = passCount + failCount;
+  let html = '';
+  html += `<div class="summary ${failCount === 0 ? 'all-pass' : 'has-fail'}">`;
+  html += failCount === 0
+    ? `✅ 전체 통과 — ${total}개`
+    : `❌ ${failCount}개 실패 <span class="fail-count">(총 ${total}개)</span>`;
+  html += '</div><div class="result-list">';
+  for (const group of groups) {
+    html += `<div class="group-header">${group.name}</div>`;
+    for (const item of group.items) {
+      html += `<div class="result-item ${item.pass ? 'pass' : 'fail'}">`;
+      html += `<span class="result-icon">${item.pass ? '✔' : '✘'}</span>`;
+      html += `<span class="result-msg">${item.message}</span>`;
+      if (!item.pass) html += `<span class="result-error">${item.error}</span>`;
+      html += '</div>';
+    }
+  }
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 // vdomToDom 래핑 — 결과 DOM을 fixture에 표시
@@ -2151,7 +2199,24 @@ describe('과제 요구사항 기준 테스트', () => {
   });
 });
 
-renderResults();
+;(async () => {
+  const currentTestEl = document.getElementById('current-test');
+  for (const item of itQueue) {
+    if (currentTestEl) currentTestEl.textContent = item.name;
+    await new Promise(r => setTimeout(r, 0));
+    try {
+      await item.fn();
+      item.group.items.push({ pass: true, message: item.name });
+      passCount++;
+    } catch(e) {
+      item.group.items.push({ pass: false, message: item.name, error: e.message });
+      failCount++;
+    }
+    await new Promise(r => setTimeout(r, 80));
+  }
+  if (currentTestEl) currentTestEl.textContent = `✅ 완료 (${passCount}/${passCount + failCount})`;
+  renderResults();
+})();
 </script>
 </body>
 </html>
