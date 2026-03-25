@@ -86,11 +86,11 @@
       font-weight: 700; font-size: 15px;
     }
     .all-pass {
-      background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.25);
+      background: rgba(15,157,122,0.1); border: 1px solid rgba(15,157,122,0.25);
       color: var(--accent2);
     }
     .has-fail {
-      background: rgba(255,92,92,0.1); border: 1px solid rgba(255,92,92,0.25);
+      background: rgba(209,67,67,0.1); border: 1px solid rgba(209,67,67,0.25);
       color: var(--danger);
     }
     .fail-count { font-size: 13px; font-weight: 500; }
@@ -101,13 +101,14 @@
       gap: 10px; align-items: flex-start;
       padding: 10px 14px; border-radius: 10px;
       font-size: 12.5px; font-family: var(--font-mono); line-height: 1.55;
+      border: 1px solid var(--border);
     }
     .result-item > span:first-child { flex-shrink: 0; }  /* 아이콘 고정 */
     .result-item.pass {
-      background: rgba(0,212,170,0.07); border: 1px solid rgba(0,212,170,0.15);
+      background: var(--surface); border-left: 3px solid var(--accent2);
     }
     .result-item.fail {
-      background: rgba(255,92,92,0.08); border: 1px solid rgba(255,92,92,0.2);
+      background: #fff5f5; border-left: 3px solid var(--danger);
     }
     .result-content {
       display: flex; flex-direction: column; gap: 2px;
