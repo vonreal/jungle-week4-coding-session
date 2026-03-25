@@ -2,12 +2,27 @@
 
 import { vdomToDom, setDomProp } from './vdom.js';
 
+// 보류 중인 REMOVE 타이머 추적
+const pendingTimers = [];
+
+/**
+ * 보류 중인 REMOVE 타이머를 모두 취소하고 즉시 노드 제거
+ */
+export function flushPendingRemoves() {
+  for (const { timerId, node } of pendingTimers) {
+    clearTimeout(timerId);
+    node.parentNode?.removeChild(node);
+  }
+  pendingTimers.length = 0;
+}
+
 /**
  * 패치 배열을 실제 DOM에 적용
  * @param {Element} rootEl - 패치를 적용할 루트 DOM 엘리먼트
  * @param {Array} patches - diff()가 반환한 패치 배열
  */
 export function applyPatches(rootEl, patches) {
+  flushPendingRemoves();
   // REMOVE 패치는 역순으로 처리 (인덱스 밀림 방지)
   const removes = patches.filter(p => p.type === 'REMOVE');
   const others = patches.filter(p => p.type !== 'REMOVE');
@@ -93,8 +108,13 @@ function applyPatch(rootEl, patch) {
     const node = getNodeByPath(rootEl, path);
     if (!node) return;
     highlightNode(node, true);
-    // 하이라이트 후 제거
-    setTimeout(() => node.parentNode?.removeChild(node), 400);
+    // 하이라이트 후 제거 (타이머 추적)
+    const timerId = setTimeout(() => {
+      node.parentNode?.removeChild(node);
+      const idx = pendingTimers.findIndex(t => t.timerId === timerId);
+      if (idx !== -1) pendingTimers.splice(idx, 1);
+    }, 400);
+    pendingTimers.push({ timerId, node });
     return;
   }
 }
