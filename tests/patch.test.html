@@ -213,33 +213,10 @@
 
 <script type="module">
 // ── 모듈 임포트 ───────────────────────────────────────────────────────────────
-// diff         : 두 VDOM을 비교해서 패치 배열을 만든다 (diff.js)
-//
-// applyPatches : ★ 이 파일의 검증 대상 (patch.js의 유일한 export)
-//   patch.js 내부 구조:
-//     applyPatches(rootEl, patches)
-//       ├─ REMOVE 패치만 추출 → path 내림차순 정렬 후 먼저 처리 (인덱스 밀림 방지)
-//       └─ 나머지 패치(ADD/REPLACE/UPDATE_*/REMOVE_PROP) 순서대로 처리
-//           └─ applyPatch(rootEl, patch) 내부에서 타입별 분기:
-//               REPLACE    → getNodeByPath() → replaceChild()  → highlightNode()
-//               UPDATE_TEXT→ getNodeByPath() → textContent 변경 → highlightNode(부모)
-//               UPDATE_PROP→ getNodeByPath() → setDomProp()    → highlightNode()
-//               REMOVE_PROP→ getNodeByPath() → removeAttribute()→ highlightNode()
-//               ADD        → getNodeByPath(부모) → insertBefore/appendChild → highlightNode()
-//               REMOVE     → getNodeByPath() → highlightNode(isRemove=true)
-//                                            → setTimeout(removeChild, 400ms)
-//
-//   highlightNode(node, isRemove):
-//     - 텍스트 노드면 부모 엘리먼트로 올라감
-//     - isRemove=false → classList.add('patch-highlight'), 1200ms 후 제거
-//     - isRemove=true  → classList.add('patch-remove'),   1200ms 후 제거
-//
-//   getNodeByPath(rootEl, path):
-//     - path = [0, 1, 2] → rootEl의 0번 자식의 1번 자식의 2번 자식
-//     - 공백 텍스트 노드는 인덱스에서 제외 (getSignificantChildren)
-//
-// createElement / createText : 테스트용 VDOM 노드 생성 (vdom.js)
-// vdomToDom : VDOM → 실제 DOM 변환, 복합 패치 검증에서 기댓값 DOM 생성용 (vdom.js)
+// diff     : 두 VDOM을 비교해서 "무엇이 바뀌었는지" 패치 배열을 만든다
+// applyPatches : 패치 배열을 받아 실제 DOM에 반영한다  ← 이 파일의 주인공
+// createElement / createText : 테스트용 VDOM 노드를 직접 만들 때 사용
+// vdomToDom : VDOM → 실제 DOM 변환 (복합 패치 검증에서 기댓값 DOM 생성용)
 import { diff }            from '../src/diff.js';
 import { applyPatches }    from '../src/patch.js';
 import { createElement, createText, vdomToDom } from '../src/vdom.js';
@@ -261,7 +238,7 @@ const groups   = []; // describe 그룹 목록 { name, items[] }
 let currentGroup = null;              // describe 등록 중에 임시로 가리키는 그룹
 const itQueue  = []; // 실행 대기 중인 테스트 목록 { name, fn, group }
 
-// describe(그룹명, 콜백)
+// describe(그룹명, 콜백) # 1. 테스트 등록
 // → 새 그룹을 만들고, 콜백을 동기 실행해서 내부 it()들을 itQueue에 등록한다
 function describe(name, fn) {
   currentGroup = { name, items: [] }; // 새 그룹 객체 생성
@@ -270,7 +247,7 @@ function describe(name, fn) {
   currentGroup = null;                // 등록 완료 후 초기화
 }
 
-// it(테스트명, async 함수)
+// it(테스트명, async 함수) # 1, 테스트 등록
 // → 즉시 실행하지 않고 itQueue에 { 이름, 함수, 소속그룹 }만 넣어둔다
 function it(name, fn) {
   itQueue.push({ name, fn, group: groups[groups.length - 1] });
@@ -362,6 +339,18 @@ function hasUserClass(el) {
   return [...el.classList].some(c => !HIGHLIGHT_CLASSES.includes(c));
 }
 
+// mountFromHTML(html) : innerHTML로 DOM을 생성해 fixture에 마운트하고 루트 엘리먼트 반환
+//   [역할] mount()는 vdomToDom()을 쓰므로 공백 텍스트 노드가 전혀 없다.
+//   반면 HTML 파서(innerHTML)는 태그 사이 개행/들여쓰기를 TextNode로 보존한다.
+//   이 헬퍼는 "실제 HTML에서 만들어진 DOM" 경로를 재현해 버그를 드러낸다.
+//   예) `<ul>\n  <li>A</li>\n  <li>B</li>\n</ul>`
+//       → childNodes: ["\n  ", li(A), "\n  ", li(B), "\n"]  ← 공백 텍스트 포함
+function mountFromHTML(html) {
+  fixture.innerHTML = '';
+  fixture.innerHTML = html;          // HTML 파서가 공백 텍스트 노드를 포함시킴
+  return fixture.firstElementChild;  // 루트 엘리먼트만 반환
+}
+
 // normalizedHtml(el) : 하이라이트 클래스를 모두 제거한 outerHTML 문자열 반환
 //   복합 패치 테스트에서 "applyPatches 결과" vs "vdomToDom 결과"를
 //   문자열로 직접 비교할 때, 하이라이트 클래스 차이로 오탐이 나지 않도록 정규화한다
@@ -399,19 +388,17 @@ async function runTests() {
   // ────────────────────────────────────────────────────────────────────────
   // 1. UPDATE_TEXT
   // ────────────────────────────────────────────────────────────────────────
-  // ── 1. UPDATE_TEXT ─────────────────────────────────────────────────────────
-  // [patch.js 연동]
-  // applyPatch()의 UPDATE_TEXT 분기:
-  //   const node = getNodeByPath(rootEl, path)  // path로 텍스트 노드 탐색
-  //   node.textContent = patch.value            // 텍스트 직접 교체
-  //   highlightNode(node.parentNode || node)    // 부모 엘리먼트에 patch-highlight 부착
+  // # 3단계 개별 테스트 내부 패턴 ── 1. UPDATE_TEXT ─────────────────────────────────────────────────────────
+  // diff가 텍스트 값 변경을 감지하면 UPDATE_TEXT 패치를 만든다.
+  // applyPatches는 이 패치를 받아 실제 DOM 텍스트 노드의 textContent를 바꾸고
+  // 부모 엘리먼트에 'patch-highlight' 클래스를 임시로 부착한다.
   describe('UPDATE_TEXT — 텍스트 갱신', () => {
     it('텍스트 노드 값이 바뀐다', async () => {
       const oldV = el('p', {}, [txt('이전')]);  // <p>이전</p>
       const newV = el('p', {}, [txt('이후')]);  // <p>이후</p>
       const root = mount(oldV);                 // fixture에 <p>이전</p> 마운트
-      // patch.js: getNodeByPath로 텍스트 노드 찾아 node.textContent = '이후' 실행
-      applyPatches(root, diff(oldV, newV));
+      applyPatches(root, diff(oldV, newV));     // UPDATE_TEXT 패치 적용
+      // 텍스트가 실제로 바뀌었는지 확인
       if (root.textContent !== '이후')
         throw new Error(`텍스트가 "이후"여야 합니다. 실제: "${root.textContent}"`);
     });
@@ -421,9 +408,7 @@ async function runTests() {
       const newV = el('p', {}, [txt('world')]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      // patch.js highlightNode(): 텍스트 노드는 classList가 없으므로
-      // 부모 엘리먼트(<p>)로 올라가 classList.add('patch-highlight') 실행
-      // 1200ms 후 setTimeout으로 자동 제거
+      // patch.js의 highlightNode()가 텍스트 노드의 부모(<p>)에 클래스를 붙인다
       if (!root.classList.contains('patch-highlight'))
         throw new Error('부모 <p>에 patch-highlight 클래스가 없습니다.');
     });
@@ -432,15 +417,13 @@ async function runTests() {
       const oldV = el('span', {}, [txt('동일')]);
       const newV = el('span', {}, [txt('동일')]);
       const root = mount(oldV);
-      // diff()가 패치를 0개 반환 → applyPatches()에 전달할 것이 없음
-      const patches = diff(oldV, newV);
+      const patches = diff(oldV, newV); // 같은 값이므로 패치가 0개여야 함
       if (patches.length !== 0)
         throw new Error(`패치가 0개여야 합니다. 실제: ${patches.length}`);
     });
 
     it('중첩된 텍스트 갱신도 올바르게 반영된다', async () => {
-      // patch.js getNodeByPath(): path = [0, 0, 0] 순서로 자식을 타고 내려가
-      // div > p > strong 안의 텍스트 노드를 정확히 찾아 교체한다
+      // div > p > strong > '이전' 처럼 깊게 중첩된 텍스트도 path로 정확히 찾아간다
       const oldV = el('div', {}, [el('p', {}, [el('strong', {}, [txt('이전')])])]);
       const newV = el('div', {}, [el('p', {}, [el('strong', {}, [txt('이후')])])]);
       const root = mount(oldV);
@@ -454,35 +437,24 @@ async function runTests() {
   // 2. UPDATE_PROP
   // ────────────────────────────────────────────────────────────────────────
   // ── 2. UPDATE_PROP ─────────────────────────────────────────────────────────
-  // [patch.js 연동]
-  // applyPatch()의 UPDATE_PROP 분기:
-  //   const node = getNodeByPath(rootEl, path)  // path로 엘리먼트 탐색
-  //   setDomProp(node, patch.key, patch.value)  // vdom.js의 setDomProp 호출
-  //   highlightNode(node)                       // 해당 노드에 patch-highlight 부착
-  //
-  // vdom.js의 setDomProp():
-  //   불리언 속성(disabled, checked 등) → setAttribute(key, '') 또는 removeAttribute
-  //   style 객체 → Object.assign(el.style, value)
-  //   그 외 → setAttribute(key, value)
+  // 속성 값이 바뀌거나 새 속성이 추가되면 UPDATE_PROP 패치가 생성된다.
+  // applyPatches는 setDomProp()을 호출해 실제 DOM에 속성을 반영한다.
   describe('UPDATE_PROP — 속성 추가 및 변경', () => {
     it('기존 속성 값이 변경된다', async () => {
       const oldV = el('div', { class: 'old' });
       const newV = el('div', { class: 'new' });
       const root = mount(oldV);
-      // patch.js: setDomProp(node, 'class', 'new') → setAttribute('class', 'new')
-      // 이후 highlightNode()가 classList.add('patch-highlight') 추가
       applyPatches(root, diff(oldV, newV));
-      // userClass(): getAttribute 대신 사용 — patch-highlight가 임시로 붙어
-      // getAttribute('class')는 "new patch-highlight"를 반환하기 때문
+      // getAttribute 대신 userClass()를 쓰는 이유:
+      // patch-highlight가 임시로 붙어 "new patch-highlight"가 되기 때문
       if (userClass(root) !== 'new')
         throw new Error(`class가 "new"여야 합니다. 실제: "${userClass(root)}"`);
     });
 
     it('없던 속성이 추가된다', async () => {
-      const oldV = el('div', {});
-      const newV = el('div', { id: 'box', 'data-role': 'main' });
+      const oldV = el('div', {});                               // 속성 없음
+      const newV = el('div', { id: 'box', 'data-role': 'main' }); // 두 속성 추가
       const root = mount(oldV);
-      // patch.js: UPDATE_PROP 패치 2개 → 각각 setDomProp() 호출
       applyPatches(root, diff(oldV, newV));
       if (root.getAttribute('id') !== 'box')
         throw new Error('id="box" 속성이 추가되지 않았습니다.');
@@ -491,12 +463,11 @@ async function runTests() {
     });
 
     it('불리언 속성 disabled가 추가된다', async () => {
+      // disabled, checked 등 불리언 속성은 vdom.js의 setDomProp()이
+      // setAttribute('disabled', '') 형태로 처리한다
       const oldV = el('button', { type: 'button' }, [txt('저장')]);
       const newV = el('button', { type: 'button', disabled: true }, [txt('저장')]);
       const root = mount(oldV);
-      // patch.js → setDomProp(node, 'disabled', true)
-      // vdom.js setDomProp(): booleanAttrs 배열에 'disabled'가 포함되어 있어
-      // setAttribute('disabled', '') 로 처리됨
       applyPatches(root, diff(oldV, newV));
       if (!root.hasAttribute('disabled'))
         throw new Error('disabled 속성이 추가되지 않았습니다.');
@@ -507,8 +478,7 @@ async function runTests() {
       const newV = el('span', { class: 'b' });
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      // patch.js highlightNode(node): 엘리먼트 노드이므로 바로
-      // classList.add('patch-highlight') 실행, 1200ms 후 자동 제거
+      // UPDATE_PROP 적용 후 patch.js가 해당 엘리먼트에 patch-highlight를 추가
       if (!root.classList.contains('patch-highlight'))
         throw new Error('UPDATE_PROP 대상에 patch-highlight가 없습니다.');
     });
@@ -518,33 +488,28 @@ async function runTests() {
   // 3. REMOVE_PROP
   // ────────────────────────────────────────────────────────────────────────
   // ── 3. REMOVE_PROP ─────────────────────────────────────────────────────────
-  // [patch.js 연동]
-  // applyPatch()의 REMOVE_PROP 분기:
-  //   const node = getNodeByPath(rootEl, path)  // path로 엘리먼트 탐색
-  //   node.removeAttribute(patch.key)           // 속성 직접 제거
-  //   highlightNode(node)                       // patch-highlight 부착
+  // 이전 VDOM에 있던 속성이 새 VDOM에 없으면 REMOVE_PROP 패치가 생성된다.
+  // applyPatches는 node.removeAttribute()를 호출한다.
   describe('REMOVE_PROP — 속성 제거', () => {
     it('기존 속성이 제거된다', async () => {
-      const oldV = el('div', { class: 'box', id: 'x' });
-      const newV = el('div', { id: 'x' });  // class 없음 → REMOVE_PROP 패치 생성
+      const oldV = el('div', { class: 'box', id: 'x' }); // class + id 있음
+      const newV = el('div', { id: 'x' });               // class 없음 → REMOVE_PROP
       const root = mount(oldV);
-      // patch.js: node.removeAttribute('class') 실행
-      // 이후 highlightNode()가 classList.add('patch-highlight') 추가
       applyPatches(root, diff(oldV, newV));
-      // hasUserClass(): removeAttribute로 'class'는 사라졌지만
-      // highlightNode()가 'patch-highlight'를 다시 추가하므로
-      // hasAttribute('class')는 true → 대신 hasUserClass()로 실제 클래스 여부 확인
+      // hasUserClass: patch-highlight 외에 사용자 class가 남아있는지 확인
+      // class가 제거됐더라도 patch-highlight가 임시 추가되므로
+      // hasAttribute('class') 대신 hasUserClass()를 사용한다
       if (hasUserClass(root))
         throw new Error('class 속성이 제거되지 않았습니다.');
-      if (root.getAttribute('id') !== 'x')
+      if (root.getAttribute('id') !== 'x') // id는 그대로여야 함
         throw new Error('id="x" 속성이 유지되어야 합니다.');
     });
 
     it('여러 속성이 한번에 제거된다', async () => {
+      // checked, class 두 속성이 동시에 제거되는 경우
       const oldV = el('input', { type: 'checkbox', checked: true, class: 'checked' });
       const newV = el('input', { type: 'checkbox' });
       const root = mount(oldV);
-      // patch.js: REMOVE_PROP 패치 2개 생성 → removeAttribute('checked'), removeAttribute('class') 순서대로 실행
       applyPatches(root, diff(oldV, newV));
       if (root.hasAttribute('checked'))
         throw new Error('checked 속성이 남아 있습니다.');
@@ -557,8 +522,7 @@ async function runTests() {
       const newV = el('p', {});
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      // patch.js: removeAttribute 후 highlightNode(node) 호출
-      // → classList.add('patch-highlight'), 1200ms 후 자동 제거
+      // 속성 제거도 UPDATE_PROP과 동일하게 patch-highlight가 부착됨
       if (!root.classList.contains('patch-highlight'))
         throw new Error('REMOVE_PROP 대상에 patch-highlight가 없습니다.');
     });
@@ -568,22 +532,13 @@ async function runTests() {
   // 4. ADD
   // ────────────────────────────────────────────────────────────────────────
   // ── 4. ADD ─────────────────────────────────────────────────────────────────
-  // [patch.js 연동]
-  // applyPatch()의 ADD 분기:
-  //   parentPath = path.slice(0, -1)           // 부모 경로 추출
-  //   childIndex = path[path.length - 1]       // 삽입할 인덱스
-  //   parent = getNodeByPath(rootEl, parentPath)
-  //   newDom = vdomToDom(patch.newNode)        // 새 VDOM → 실제 DOM 변환
-  //   refNode = parent.childNodes[childIndex]
-  //   refNode ? insertBefore(newDom, refNode)  // 중간 삽입
-  //           : appendChild(newDom)            // 끝에 추가
-  //   highlightNode(newDom)                    // 새 노드에 patch-highlight 부착
+  // 새 VDOM에는 있지만 이전 VDOM에 없는 자식 노드에 대해 ADD 패치가 생성된다.
+  // applyPatches는 vdomToDom()으로 새 DOM을 만들어 올바른 위치에 삽입한다.
   describe('ADD — 노드 추가', () => {
     it('자식 끝에 노드가 추가된다', async () => {
-      const oldV = el('ul', {}, [el('li', {}, [txt('A')])]);
-      const newV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])]);
+      const oldV = el('ul', {}, [el('li', {}, [txt('A')])]);              // A만 있음
+      const newV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])]); // B 추가
       const root = mount(oldV);
-      // patch.js: refNode = childNodes[1] = null → appendChild(newDom) 실행
       applyPatches(root, diff(oldV, newV));
       const items = [...root.querySelectorAll('li')].map(n => n.textContent);
       if (items.join(',') !== 'A,B')
@@ -591,20 +546,20 @@ async function runTests() {
     });
 
     it('key 기반 리스트 중간에 노드가 삽입된다', async () => {
-      // diff.js가 data-key로 A↔A, C↔C 매칭 후 B는 신규 → ADD 패치 path=[1]
-      // patch.js: refNode = childNodes[1] (C 노드) → insertBefore(B, C) 실행
+      // data-key 속성이 있으면 diff는 key 기반으로 매칭한다
+      // A, C 사이에 B를 끼워 넣는 케이스
       const oldV = el('ul', {}, [
         el('li', { 'data-key': 'a' }, [txt('A')]),
         el('li', { 'data-key': 'c' }, [txt('C')]),
       ]);
       const newV = el('ul', {}, [
         el('li', { 'data-key': 'a' }, [txt('A')]),
-        el('li', { 'data-key': 'b' }, [txt('B')]),
+        el('li', { 'data-key': 'b' }, [txt('B')]), // 중간 삽입
         el('li', { 'data-key': 'c' }, [txt('C')]),
       ]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(480);
+      await wait(480); // REMOVE 패치가 있을 경우를 대비해 지연 대기
       const items = [...root.querySelectorAll('li')].map(n => n.textContent);
       if (items.join(',') !== 'A,B,C')
         throw new Error(`중간 삽입 후 A,B,C여야 합니다. 실제: ${items.join(',')}`);
@@ -616,18 +571,17 @@ async function runTests() {
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
       const items = [...root.querySelectorAll('li')];
-      const added = items.find(n => n.textContent === 'B');
+      const added = items.find(n => n.textContent === 'B'); // 새로 추가된 li 찾기
       if (!added) throw new Error('추가된 <li>B</li>를 찾을 수 없습니다.');
-      // patch.js: appendChild 후 highlightNode(newDom) → classList.add('patch-highlight')
+      // ADD 직후 patch.js가 새 노드에 patch-highlight를 부착한다
       if (!added.classList.contains('patch-highlight'))
         throw new Error('추가된 노드에 patch-highlight가 없습니다.');
     });
 
     it('빈 부모에 첫 자식이 추가된다', async () => {
-      const oldV = el('div', {});
+      const oldV = el('div', {});                              // 자식 없음
       const newV = el('div', {}, [el('p', {}, [txt('새 단락')])]);
       const root = mount(oldV);
-      // patch.js: childNodes가 비어있어 refNode = null → appendChild(newDom) 실행
       applyPatches(root, diff(oldV, newV));
       if (!root.querySelector('p'))
         throw new Error('p 노드가 추가되지 않았습니다.');
@@ -640,18 +594,11 @@ async function runTests() {
   // 5. REMOVE
   // ────────────────────────────────────────────────────────────────────────
   // ── 5. REMOVE ──────────────────────────────────────────────────────────────
-  // [patch.js 연동]
-  // applyPatches()에서 REMOVE 패치는 특별 처리:
-  //   removes = patches.filter(p => p.type === 'REMOVE')
-  //   sortedRemoves = removes.sort(path 내림차순)  // 인덱스 밀림 방지
-  //   → 뒤 인덱스부터 제거해야 앞 노드의 인덱스가 안 밀림
-  //
-  // applyPatch()의 REMOVE 분기:
-  //   node = getNodeByPath(rootEl, path)
-  //   highlightNode(node, isRemove=true)
-  //     → classList.add('patch-remove'), 1200ms 후 자동 제거
-  //   setTimeout(() => node.parentNode?.removeChild(node), 400)
-  //     → 400ms 후 실제 DOM에서 삭제
+  // 이전 VDOM에는 있지만 새 VDOM에 없는 자식에 대해 REMOVE 패치가 생성된다.
+  // patch.js의 REMOVE 처리:
+  //   1) 즉시: 노드에 'patch-remove' 클래스 추가 (빨간 테두리 표시)
+  //   2) 400ms 뒤: setTimeout으로 실제 node.removeChild() 실행
+  // → 테스트에서 "삭제 직후"와 "wait(460) 후"를 나눠 검증한다
   describe('REMOVE — 노드 삭제', () => {
     it('삭제 직후 patch-remove 클래스가 붙는다', async () => {
       const oldV = el('ul', {}, [
@@ -660,9 +607,8 @@ async function runTests() {
       ]);
       const newV = el('ul', {}, [el('li', { 'data-key': 'a' }, [txt('A')])]);
       const root = mount(oldV);
-      // patch.js: highlightNode(node, true) → classList.add('patch-remove') 즉시 실행
-      // setTimeout(removeChild, 400) 은 아직 실행 안 됨
       applyPatches(root, diff(oldV, newV));
+      // applyPatches 직후: B 노드는 아직 DOM에 있고, patch-remove 클래스가 붙어야 함
       const removing = root.querySelector('li[data-key="b"]');
       if (!removing)
         throw new Error('삭제 대상 노드를 찾을 수 없습니다.');
@@ -678,9 +624,8 @@ async function runTests() {
       const newV = el('ul', {}, [el('li', { 'data-key': 'a' }, [txt('A')])]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      // patch.js의 setTimeout(..., 400) 완료를 기다림 (여유 60ms 추가)
-      await wait(460);
-      // 400ms 경과 후 node.parentNode?.removeChild(node) 실행 완료
+      await wait(460); // patch.js의 setTimeout 400ms 완료를 기다림 (여유 60ms)
+      // 지연 후: B 노드가 실제로 사라져야 함
       if (root.querySelector('li[data-key="b"]'))
         throw new Error('지연 후에도 삭제 대상 노드가 남아 있습니다.');
       const items = [...root.querySelectorAll('li')].map(n => n.textContent);
@@ -690,10 +635,10 @@ async function runTests() {
 
     it('마지막 자식 삭제 후 부모가 비어있다', async () => {
       const oldV = el('ul', {}, [el('li', {}, [txt('Only')])]);
-      const newV = el('ul', {});
+      const newV = el('ul', {}); // 자식 없음
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(460); // patch.js setTimeout 완료 대기
+      await wait(460);
       if (root.childNodes.length !== 0)
         throw new Error(`부모가 비어있어야 합니다. childNodes: ${root.childNodes.length}`);
     });
@@ -703,22 +648,18 @@ async function runTests() {
   // 6. REPLACE
   // ────────────────────────────────────────────────────────────────────────
   // ── 6. REPLACE ─────────────────────────────────────────────────────────────
-  // [patch.js 연동]
-  // applyPatch()의 REPLACE 분기:
-  //   node = getNodeByPath(rootEl, path)       // 교체될 기존 노드 탐색
-  //   newDom = vdomToDom(patch.newNode)        // 새 VDOM → 실제 DOM 변환
-  //   node.parentNode?.replaceChild(newDom, node) // 기존 노드를 새 노드로 교체
-  //   highlightNode(newDom)                    // 새 노드에 patch-highlight 부착
+  // 같은 위치에 있지만 태그가 다르거나 (예: p→span), 타입이 다른 경우 (text↔element)
+  // diff는 REPLACE 패치를 만든다.
+  // applyPatches는 node.parentNode.replaceChild()로 기존 노드를 통째로 교체한다.
   describe('REPLACE — 노드 교체', () => {
     it('태그가 다른 경우 노드가 교체된다', async () => {
       const oldV = el('section', {}, [el('p', { class: 'from' }, [txt('내용')])]);
-      const newV = el('section', {}, [el('strong', { class: 'to' }, [txt('내용')])]);
+      const newV = el('section', {}, [el('strong', { class: 'to' }, [txt('내용')])]); // p→strong
       const root = mount(oldV);
-      // patch.js: vdomToDom(strong 노드) 생성 후 replaceChild(strong, p) 실행
       applyPatches(root, diff(oldV, newV));
       if (!root.querySelector('strong'))
         throw new Error('strong 노드로 교체되지 않았습니다.');
-      if (root.querySelector('p'))
+      if (root.querySelector('p')) // 기존 p가 남아있으면 안 됨
         throw new Error('이전 p 노드가 남아 있습니다.');
     });
 
@@ -730,22 +671,21 @@ async function runTests() {
       const newSpan = root.querySelector('span');
       if (!newSpan)
         throw new Error('span으로 교체되지 않았습니다.');
-      // patch.js: replaceChild 후 highlightNode(newDom) → classList.add('patch-highlight')
+      // 새로 삽입된 노드에 patch-highlight가 부착됨
       if (!newSpan.classList.contains('patch-highlight'))
         throw new Error('교체된 span에 patch-highlight 클래스가 없습니다.');
     });
 
     it('text → element 타입 변경도 교체된다', async () => {
-      // diff.js: oldNode.type('text') !== newNode.type('element') → REPLACE 패치 생성
-      // patch.js: replaceChild로 텍스트 노드 자리에 span 엘리먼트 삽입
+      // 텍스트 노드(type:'text')와 엘리먼트 노드(type:'element')는 타입이 달라
+      // diff가 REPLACE 패치를 생성하는지 확인한다
       const patches = diff(createText('글자'), el('span', {}, [txt('글자')]));
       if (!patches.some(p => p.type === 'REPLACE'))
         throw new Error('text→element 타입 불일치에 REPLACE가 없습니다.');
     });
 
     it('REPLACE 직후 기존 자식이 없어지고 새 자식이 생긴다', async () => {
-      // patch.js: vdomToDom(ol + 자식들) 을 한 번에 생성해 replaceChild로 교체
-      // 자식 트리 전체가 새로 만들어지므로 기존 ul과 그 자식들은 DOM에서 사라짐
+      // ul → ol 처럼 부모 노드 자체가 교체되면 자식 트리도 통째로 바뀐다
       const oldV = el('div', {}, [el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])])]);
       const newV = el('div', {}, [el('ol', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])])]);
       const root = mount(oldV);
@@ -759,12 +699,9 @@ async function runTests() {
   // 7. 복합 패치
   // ────────────────────────────────────────────────────────────────────────
   // ── 7. 복합 패치 ───────────────────────────────────────────────────────────
-  // [patch.js 연동]
-  // applyPatches()는 패치 배열 전체를 처리한다:
-  //   1) REMOVE 패치 → path 내림차순 정렬 후 먼저 실행 (인덱스 밀림 방지)
-  //   2) 나머지 패치 → 배열 순서대로 실행
-  // diff()가 여러 변경을 감지하면 패치 배열에 여러 객체가 쌓이고,
-  // applyPatches()가 타입별 분기로 하나씩 처리한다.
+  // 실제 사용 환경에서는 텍스트·속성·노드 추가/삭제가 한 번에 발생한다.
+  // diff는 변경된 곳마다 각각의 패치를 만들고,
+  // applyPatches는 그것들을 순서대로 모두 처리한다.
   describe('복합 패치 — 여러 변경 동시 적용', () => {
     it('텍스트 + 속성 변경이 함께 반영된다', async () => {
       // 한 엘리먼트의 텍스트와 class가 동시에 바뀌는 경우
@@ -849,10 +786,7 @@ async function runTests() {
   // 8. 엣지 케이스
   // ────────────────────────────────────────────────────────────────────────
   // ── 8. 엣지 케이스 ─────────────────────────────────────────────────────────
-  // [patch.js 연동]
-  // applyPatches()는 빈 배열을 받아도 for 루프를 돌지 않으므로 DOM 무변경
-  // getNodeByPath()는 path=[]이면 rootEl 자체를 반환, 깊은 경로도 순회 처리
-  // getSignificantChildren()으로 공백 텍스트를 인덱스에서 제외해 정확한 탐색 보장
+  // 경계 조건과 예외 상황에서도 applyPatches가 안전하게 동작하는지 확인한다.
   describe('엣지 케이스', () => {
     it('패치 배열이 비어있으면 DOM이 변하지 않는다', async () => {
       const v = el('div', { id: 'same' }, [txt('변화 없음')]);
@@ -902,7 +836,149 @@ async function runTests() {
     });
   });
 
-  // ── 큐 실행 루프 ─────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────────
+  // 9. [버그 노출] ADD — innerHTML DOM 인덱스 불일치
+  // ────────────────────────────────────────────────────────────────────────
+  // ★ 이 그룹의 테스트는 현재 구현의 버그를 드러내기 위한 것으로, FAIL이 정상입니다.
+  //
+  // [버그 원인]
+  //   applyPatch(ADD) 내부 코드:
+  //     const elementChildren = Array.from(parent.childNodes); // ← 공백 포함 전체
+  //     const refNode = elementChildren[childIndex] ?? null;
+  //
+  //   diff()가 생성하는 childIndex는 VDOM 기준 (공백 제외)이지만
+  //   childNodes에는 공백 텍스트 노드가 섞여 있으므로 인덱스가 어긋난다.
+  //
+  //   mount()는 vdomToDom()을 사용해 공백이 없는 DOM을 만들기 때문에
+  //   기존 테스트에서 이 버그가 숨겨진다.
+  //   mountFromHTML()로 HTML 파서 경로를 재현해야 버그가 드러난다.
+  describe('[버그 노출 ①] ADD — innerHTML DOM 인덱스 불일치', () => {
+
+    it('[FAIL 예상] 끝에 추가 — C가 B 앞에 잘못 삽입된다', async () => {
+      // innerHTML로 생성 → childNodes에 공백 텍스트 노드 포함
+      //   childNodes: ["\n  ", li(A), "\n  ", li(B), "\n"]  ← 인덱스 0~4
+      const dom = mountFromHTML(`<ul>\n  <li>A</li>\n  <li>B</li>\n</ul>`);
+
+      const oldV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])]);
+      const newV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')]), el('li', {}, [txt('C')])]);
+
+      // diff → ADD patch: { type:'ADD', path:[2], newNode: li(C) }
+      // childIndex = 2
+      // Array.from(childNodes)[2] = TextNode("\n  ")  ← 두 번째 공백!
+      // insertBefore(li(C), TextNode("\n  ")) → C가 A와 B 사이에 삽입됨
+      applyPatches(dom, diff(oldV, newV));
+
+      const items = [...dom.querySelectorAll('li')].map(n => n.textContent);
+      // 기댓값: 'A,B,C'   실젯값(버그): 'A,C,B'
+      if (items.join(',') !== 'A,B,C')
+        throw new Error(
+          `[ADD 버그] 항목이 A,B,C여야 합니다. 실제: "${items.join(',')}" ` +
+          `← childNodes[2]가 공백 텍스트 노드이므로 C가 B 앞에 끼어들었습니다.`
+        );
+    });
+
+    it('[FAIL 예상] 키 기반 중간 삽입 — B가 A 앞에 잘못 삽입된다', async () => {
+      // key 기반 diff: old=[a,c], new=[a,b,c] → ADD b at path=[1]
+      // innerHTML DOM childNodes: ["\n  ", li(a), "\n  ", li(c), "\n"]
+      const dom = mountFromHTML(
+        `<ul>\n  <li data-key="a">A</li>\n  <li data-key="c">C</li>\n</ul>`
+      );
+
+      const oldV = el('ul', {}, [
+        el('li', { 'data-key': 'a' }, [txt('A')]),
+        el('li', { 'data-key': 'c' }, [txt('C')]),
+      ]);
+      const newV = el('ul', {}, [
+        el('li', { 'data-key': 'a' }, [txt('A')]),
+        el('li', { 'data-key': 'b' }, [txt('B')]),  // 중간 삽입
+        el('li', { 'data-key': 'c' }, [txt('C')]),
+      ]);
+
+      // diff → ADD patch: { type:'ADD', path:[1], newNode: li(b) }
+      // childIndex = 1
+      // Array.from(childNodes)[1] = li(a)  ← A 자체!
+      // insertBefore(li(B), li(a)) → B가 A 앞에 삽입됨
+      applyPatches(dom, diff(oldV, newV));
+      await wait(480);
+
+      const items = [...dom.querySelectorAll('li')].map(n => n.textContent);
+      // 기댓값: 'A,B,C'   실젯값(버그): 'B,A,C'
+      if (items.join(',') !== 'A,B,C')
+        throw new Error(
+          `[ADD 버그] A,B,C여야 합니다. 실제: "${items.join(',')}" ` +
+          `← childNodes[1]이 li(A) 자체이므로 B가 A 앞에 삽입됩니다.`
+        );
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 10. [버그 노출] rootEl 타입 — parentNode 가정 미검증
+  // ────────────────────────────────────────────────────────────────────────
+  // ★ 이 그룹의 테스트는 현재 구현의 버그를 드러내기 위한 것으로, FAIL이 정상입니다.
+  //
+  // [버그 원인]
+  //   REPLACE 패치 내부 코드:
+  //     node.parentNode?.replaceChild(newDom, node);
+  //
+  //   rootEl이 DOM 트리에 마운트되지 않은 orphan 노드이면 parentNode = null
+  //   → optional chaining ?.으로 replaceChild 호출이 건너뛰어짐
+  //   → 에러 없이 아무 일도 일어나지 않는 silent fail 발생
+  //
+  //   mount()는 fixture에 appendChild()해 항상 parentNode가 생기므로
+  //   기존 테스트에서 이 버그가 숨겨진다.
+  describe('[버그 노출 ②] rootEl 타입 — parentNode 미검증 silent fail', () => {
+
+    it('[FAIL 예상] orphan rootEl에 REPLACE 패치 적용 시 silent fail 발생', async () => {
+      // mount() 대신 vdomToDom()으로 직접 생성 → fixture에 붙이지 않음
+      // → dom.parentNode === null  (orphan 노드)
+      const dom = vdomToDom(el('p', {}, [txt('이전')]));
+
+      const oldV = el('p',   {}, [txt('이전')]);
+      const newV = el('div', {}, [txt('이후')]); // 태그 변경 → REPLACE 패치 생성
+
+      // diff → REPLACE patch: { type:'REPLACE', path:[], newNode: div('이후') }
+      // applyPatch REPLACE:
+      //   node = getNodeByPath(dom, []) = dom  (p 엘리먼트)
+      //   node.parentNode?.replaceChild(newDom, node)
+      //   → dom.parentNode === null → ?.으로 건너뜀 → silent fail
+      applyPatches(dom, diff(oldV, newV));
+
+      // 기댓값: dom이 div로 교체됨 (또는 최소한 에러 발생)
+      // 실젯값(버그): dom은 여전히 p 태그 그대로 (에러도 없음)
+      if (dom.tagName.toLowerCase() === 'p')
+        throw new Error(
+          `[rootEl 타입 버그] REPLACE 후 <div>가 되어야 하는데 <p> 그대로입니다. ` +
+          `← dom.parentNode가 null이면 replaceChild가 optional chaining으로 무시됩니다.`
+        );
+    });
+
+    it('[FAIL 예상] orphan rootEl에 REMOVE 패치(path=[]) 적용 시 silent fail 발생', async () => {
+      // rootEl 자체를 제거하는 패치: path=[], type=REMOVE
+      // REMOVE 코드: node.parentNode?.removeChild(node)
+      // dom.parentNode === null → silent fail
+      const dom = vdomToDom(el('section', {}, [txt('삭제 대상')]));
+
+      // path=[]인 REMOVE 패치를 직접 생성 (diff로는 만들기 어려우므로 수동 생성)
+      const patches = [{ type: 'REMOVE', path: [] }];
+
+      applyPatches(dom, patches);
+      await wait(460); // REMOVE의 400ms 지연 대기
+
+      // 기댓값: dom이 부모에서 제거됨 (또는 에러 발생)
+      // 실젯값(버그): dom은 여전히 살아있고 parentNode도 여전히 null (아무것도 안 됨)
+      // 이 테스트는 "패치가 완전히 무시됐는지"를 태그 존재 여부로 간접 확인한다
+      // dom이 제거됐으면 dom.isConnected = false 이어야 하지만,
+      // 원래부터 isConnected=false(orphan)이므로 패치 실행 여부를 직접 확인할 수 없다
+      // → patch-remove 클래스가 붙었어야 한다는 점으로 최소 동작 확인
+      if (!dom.classList.contains('patch-remove'))
+        throw new Error(
+          `[rootEl 타입 버그] REMOVE 패치가 적용됐다면 최소한 patch-remove 클래스가 ` +
+          `붙어야 합니다. 클래스가 없다는 것은 패치 자체가 silent fail 했음을 의미합니다.`
+        );
+    });
+  });
+
+  // #2. 순서대로 실행 ── 큐 실행 루프 ─────────────────────────────────────────────────────────
   // describe() 단계에서 itQueue에 쌓아둔 테스트를 여기서 순서대로 실행한다.
   // await fn()으로 각 테스트가 완전히 끝날 때까지 기다린 뒤 다음으로 넘어간다.
   // → wait(460) 같은 비동기 대기도 올바르게 처리된다.
