@@ -160,6 +160,7 @@
 
     async function runCase(name, fn) {
       if (currentTestEl) currentTestEl.textContent = name;
+      await new Promise(r => setTimeout(r, 0));   // repaint으로 테스트명 표시
       try {
         await fn();
         console.log(`PASS: ${name}`);
@@ -167,6 +168,7 @@
         console.error(`FAIL: ${name}`, error);
         assert(false, `${name} - ${error.message}`);
       }
+      await new Promise(r => setTimeout(r, 150)); // 다음 테스트 전 시각적 여백
     }
 
     function click(el) {
@@ -300,6 +302,7 @@
     });
 
     renderResults();
+    if (currentTestEl) currentTestEl.textContent = '✅ 완료';
   </script>
 </body>
 </html>
