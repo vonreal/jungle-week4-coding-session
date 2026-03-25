@@ -232,14 +232,14 @@ export function renderResults() {
 
   container.innerHTML = `
     <div class="summary ${allPass ? 'all-pass' : 'has-fail'}">
-      <span class="summary-icon">${allPass ? '🎉' : '⚠️'}</span>
-      <strong>${passCount}/${total} 통과</strong>
-      ${failCount > 0 ? `<span class="fail-count">${failCount}개 실패</span>` : ''}
+      ${allPass
+        ? `✅ 전체 통과 — ${total}개`
+        : `❌ ${failCount}개 실패 <span class="fail-count">(총 ${total}개)</span>`}
     </div>
     <div class="result-list">
       ${results.map(r => `
         <div class="result-item ${r.pass ? 'pass' : 'fail'}">
-          <span class="result-icon">${r.pass ? '✅' : '❌'}</span>
+          <span class="result-icon">${r.pass ? '✔' : '✘'}</span>
           <div class="result-msg">
             <div>${r.message}</div>
             ${buildDetails(r.details)}

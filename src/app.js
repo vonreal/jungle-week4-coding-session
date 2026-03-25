@@ -2,7 +2,7 @@
 
 import { domToVdom, vdomToDom, cloneVdom } from './vdom.js';
 import { diff } from './diff.js';
-import { applyPatches } from './patch.js';
+import { applyPatches, flushPendingRemoves } from './patch.js';
 import { History } from './history.js';
 
 // 초기 샘플 HTML
@@ -167,8 +167,12 @@ function onUndo() {
   const oldVdom = cloneVdom(currentVdom);
   currentVdom = prevVdom;
 
+  // 보류 중인 REMOVE를 즉시 처리한 뒤 VDOM 스냅샷으로 DOM 재구성
+  flushPendingRemoves();
+  realArea.innerHTML = '';
+  realArea.appendChild(vdomToDom(currentVdom));
+
   const patches = diff(oldVdom, currentVdom);
-  applyPatches(realArea.firstElementChild || realArea, patches);
   testArea.value = htmlSnapshots[history.cursor] ?? '';
 
   updateUI();
@@ -186,8 +190,12 @@ function onRedo() {
   const oldVdom = cloneVdom(currentVdom);
   currentVdom = nextVdom;
 
+  // 보류 중인 REMOVE를 즉시 처리한 뒤 VDOM 스냅샷으로 DOM 재구성
+  flushPendingRemoves();
+  realArea.innerHTML = '';
+  realArea.appendChild(vdomToDom(currentVdom));
+
   const patches = diff(oldVdom, currentVdom);
-  applyPatches(realArea.firstElementChild || realArea, patches);
   testArea.value = htmlSnapshots[history.cursor] ?? '';
 
   updateUI();

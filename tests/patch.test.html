@@ -34,15 +34,15 @@
     .hero {
       background: linear-gradient(135deg, rgba(91,82,232,0.07), rgba(0,168,132,0.05));
       border: 1px solid rgba(91,82,232,0.18);
-      border-radius: 20px; padding: 28px 24px; margin-bottom: 24px;
+      border-radius: 20px; padding: 24px; margin-bottom: 24px;
     }
     h1 {
-      font-size: clamp(22px, 3.5vw, 36px); font-weight: 800; letter-spacing: -0.02em;
+      font-size: clamp(20px, 3vw, 32px); font-weight: 800; letter-spacing: -0.02em;
       background: linear-gradient(90deg, var(--accent), var(--accent2));
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text; margin-bottom: 8px;
+      background-clip: text; margin-bottom: 6px;
     }
-    .subtitle { color: var(--text-muted); font-size: 14px; line-height: 1.7; max-width: 680px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
 
     /* ── 레이아웃 ── */
     .layout {
@@ -86,11 +86,11 @@
       font-weight: 700; font-size: 15px;
     }
     .all-pass {
-      background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.25);
+      background: rgba(15,157,122,0.1); border: 1px solid rgba(15,157,122,0.25);
       color: var(--accent2);
     }
     .has-fail {
-      background: rgba(255,92,92,0.1); border: 1px solid rgba(255,92,92,0.25);
+      background: rgba(209,67,67,0.1); border: 1px solid rgba(209,67,67,0.25);
       color: var(--danger);
     }
     .fail-count { font-size: 13px; font-weight: 500; }
@@ -101,13 +101,14 @@
       gap: 10px; align-items: flex-start;
       padding: 10px 14px; border-radius: 10px;
       font-size: 12.5px; font-family: var(--font-mono); line-height: 1.55;
+      border: 1px solid var(--border);
     }
     .result-item > span:first-child { flex-shrink: 0; }  /* 아이콘 고정 */
     .result-item.pass {
-      background: rgba(0,212,170,0.07); border: 1px solid rgba(0,212,170,0.15);
+      background: var(--surface); border-left: 3px solid var(--accent2);
     }
     .result-item.fail {
-      background: rgba(255,92,92,0.08); border: 1px solid rgba(255,92,92,0.2);
+      background: #fff5f5; border-left: 3px solid var(--danger);
     }
     .result-content {
       display: flex; flex-direction: column; gap: 2px;
@@ -212,7 +213,7 @@
         </section>
         <div class="note">
           ⚠️ <code>REMOVE</code> 패치는 구현상 400ms 지연 뒤 실제 삭제됩니다.
-          해당 테스트는 <code>wait(460)</code>으로 완료를 기다린 뒤 검증합니다.
+          해당 테스트는 <code>wait(430)</code>으로 완료를 기다린 뒤 검증합니다.
         </div>
       </div>
     </aside>
@@ -277,9 +278,9 @@ function renderResults() {
   // 요약 배너: 전체 통과/실패 수
   const summaryHtml = `
     <div class="summary ${allPass ? 'all-pass' : 'has-fail'}">
-      <span>${allPass ? '🎉' : '⚠️'}</span>
-      <strong>${passCount} / ${total} 통과</strong>
-      ${failCount > 0 ? `<span class="fail-count">${failCount}개 실패</span>` : ''}
+      ${allPass
+        ? `✅ 전체 통과 — ${total}개`
+        : `❌ ${failCount}개 실패 <span class="fail-count">(총 ${total}개)</span>`}
     </div>`;
 
   // 그룹별 테스트 목록: pass는 초록, fail은 빨간 배경
@@ -288,7 +289,7 @@ function renderResults() {
     <div class="result-list">
       ${g.items.map(r => `
         <div class="result-item ${r.pass ? 'pass' : 'fail'}">
-          <span>${r.pass ? '✅' : '❌'}</span>
+          <span class="result-icon">${r.pass ? '✔' : '✘'}</span>
           <div class="result-content">
             <span>${r.message}</span>
             ${r.error ? `<div class="result-error">${escapeHtml(r.error)}</div>` : ''}
@@ -317,8 +318,10 @@ function txt(value) { return createText(value); }
 
 // wait(ms) : ms 밀리초 뒤 resolve되는 Promise
 //   REMOVE 패치는 patch.js 내부에서 setTimeout 400ms 후 실제 삭제되므로
-//   그 완료를 기다릴 때 사용한다. 예) await wait(460)
+//   그 완료를 기다릴 때 사용한다. 예) await wait(430)
 function wait(ms)   { return new Promise(r => setTimeout(r, ms)); }
+
+const REMOVE_WAIT_MS = 430;
 
 const fixture = document.getElementById('fixture'); // DOM이 마운트될 컨테이너
 
@@ -574,7 +577,7 @@ async function runTests() {
       ]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(480); // REMOVE 패치가 있을 경우를 대비해 지연 대기
+      await wait(REMOVE_WAIT_MS); // REMOVE 패치가 있을 경우를 대비해 지연 대기
       const items = [...root.querySelectorAll('li')].map(n => n.textContent);
       if (items.join(',') !== 'A,B,C')
         throw new Error(`중간 삽입 후 A,B,C여야 합니다. 실제: ${items.join(',')}`);
@@ -639,7 +642,7 @@ async function runTests() {
       const newV = el('ul', {}, [el('li', { 'data-key': 'a' }, [txt('A')])]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(460); // patch.js의 setTimeout 400ms 완료를 기다림 (여유 60ms)
+      await wait(REMOVE_WAIT_MS); // patch.js의 setTimeout 400ms 완료를 기다림 (여유 30ms)
       // 지연 후: B 노드가 실제로 사라져야 함
       if (root.querySelector('li[data-key="b"]'))
         throw new Error('지연 후에도 삭제 대상 노드가 남아 있습니다.');
@@ -653,7 +656,7 @@ async function runTests() {
       const newV = el('ul', {}); // 자식 없음
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(460);
+      await wait(REMOVE_WAIT_MS);
       if (root.childNodes.length !== 0)
         throw new Error(`부모가 비어있어야 합니다. childNodes: ${root.childNodes.length}`);
     });
@@ -752,7 +755,7 @@ async function runTests() {
       ]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(480); // REMOVE 지연 완료 대기
+      await wait(REMOVE_WAIT_MS); // REMOVE 지연 완료 대기
 
       // normalizedHtml()으로 하이라이트 클래스 제거 후 문자열 비교
       const expected = vdomToDom(newV);
@@ -789,7 +792,7 @@ async function runTests() {
       ]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(480); // REMOVE 지연 완료 대기
+      await wait(REMOVE_WAIT_MS); // REMOVE 지연 완료 대기
       const items = [...root.querySelectorAll('li')].map(n => n.textContent);
       if (!items.includes('A')) throw new Error('A가 없습니다.');
       if (!items.includes('C')) throw new Error('C가 추가되지 않았습니다.');
@@ -914,7 +917,7 @@ async function runTests() {
       // Array.from(childNodes)[1] = li(a)  ← A 자체!
       // insertBefore(li(B), li(a)) → B가 A 앞에 삽입됨
       applyPatches(dom, diff(oldV, newV));
-      await wait(480);
+      await wait(REMOVE_WAIT_MS);
 
       const items = [...dom.querySelectorAll('li')].map(n => n.textContent);
       // 기댓값: 'A,B,C'   실젯값(버그): 'B,A,C'
@@ -929,7 +932,7 @@ async function runTests() {
   // #2. 순서대로 실행 ── 큐 실행 루프 ─────────────────────────────────────────────────────────
   // describe() 단계에서 itQueue에 쌓아둔 테스트를 여기서 순서대로 실행한다.
   // await fn()으로 각 테스트가 완전히 끝날 때까지 기다린 뒤 다음으로 넘어간다.
-  // → wait(460) 같은 비동기 대기도 올바르게 처리된다.
+  // → wait(430) 같은 비동기 대기도 올바르게 처리된다.
   for (const { name, fn, group } of itQueue) {
     try {
       await fn();      // 테스트 함수 실행 (async 완료까지 대기)
