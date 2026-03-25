@@ -82,6 +82,11 @@ function onPatch() {
   }
 
   const newVdom = domToVdom(appEl);
+  const duplicateKeyError = findDuplicateKeyError(newVdom);
+  if (duplicateKeyError) {
+    alert(duplicateKeyError);
+    return;
+  }
 
   // Diff
   const patches = diff(currentVdom, newVdom);
@@ -101,6 +106,29 @@ function onPatch() {
   updateUI();
   setDiffLog(patches);
   renderVdomTree(currentVdom, prevVdom);
+}
+
+function findDuplicateKeyError(vnode, path = 'root') {
+  if (!vnode || vnode.type !== 'element') return null;
+
+  const seenKeys = new Map();
+  for (const child of vnode.children || []) {
+    if (!child || child.type !== 'element' || child.key == null) continue;
+
+    if (seenKeys.has(child.key)) {
+      return `같은 부모 아래 data-key는 유일해야 합니다. "${child.key}"가 ${path}에서 중복되었습니다.`;
+    }
+
+    seenKeys.set(child.key, true);
+  }
+
+  for (const [index, child] of (vnode.children || []).entries()) {
+    const childPath = `${path} > ${child?.tag ?? child?.type ?? index}[${index}]`;
+    const nestedError = findDuplicateKeyError(child, childPath);
+    if (nestedError) return nestedError;
+  }
+
+  return null;
 }
 
 /**
