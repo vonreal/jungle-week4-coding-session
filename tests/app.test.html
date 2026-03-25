@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App Module Tests</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #10151d; --surface: #18202c; --surface2: #263140;
+      --border: #324357; --accent: #4db3ff; --accent2: #ffd166;
+      --danger: #ff6b6b; --text: #edf2ff; --text-muted: #9ba7c4;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'Pretendard', system-ui, sans-serif; padding: 24px; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
+    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 18px; }
+    .note { margin-bottom: 24px; padding: 12px 14px; border-radius: 10px; background: rgba(255,209,102,0.12); border: 1px solid rgba(255,209,102,0.28); color: var(--accent2); font-size: 13px; line-height: 1.5; }
+    .summary { padding: 16px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; }
+    .all-pass { background: rgba(77,179,255,0.12); border: 1px solid rgba(77,179,255,0.3); color: var(--accent); }
+    .has-fail { background: rgba(255,107,107,0.12); border: 1px solid rgba(255,107,107,0.3); color: var(--danger); }
+    .fail-count { font-size: 13px; font-weight: 400; color: var(--danger); }
+    .result-list { display: flex; flex-direction: column; gap: 6px; }
+    .result-item { display: flex; align-items: baseline; gap: 10px; padding: 9px 14px; border-radius: 7px; font-size: 13px; font-family: var(--font-mono); }
+    .result-item.pass { background: var(--surface); border-left: 3px solid var(--accent); }
+    .result-item.fail { background: rgba(255,107,107,0.08); border-left: 3px solid var(--danger); }
+    .result-icon { font-size: 14px; }
+    .result-msg { flex: 1; }
+    .result-error { color: var(--danger); font-size: 11px; }
+    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent2); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
+    a.back:hover { text-decoration: underline; }
+    #sandbox { display: none; }
+  </style>
+</head>
+<body>
+  <a class="back" href="../index.html">메인으로 돌아가기</a>
+  <h1>App 모듈 테스트</h1>
+  <p class="subtitle">초기 렌더링, patch, undo/redo, 예외 입력 처리 흐름을 검증합니다.</p>
+  <div class="note">`app.js`는 모듈 내부 상태를 가지므로, 각 테스트마다 쿼리스트링을 다르게 붙여 새 모듈 인스턴스로 import 합니다.</div>
+  <div id="test-results">테스트 실행 중...</div>
+  <div id="sandbox"></div>
+
+  <script type="module">
+    import { assert, renderResults } from './test-runner.js';
+
+    const sandbox = document.getElementById('sandbox');
+
+    function buildFixture() {
+      sandbox.innerHTML = `
+        <div class="toolbar">
+          <button id="btn-patch">Patch</button>
+          <button id="btn-undo">Undo</button>
+          <button id="btn-redo">Redo</button>
+          <span id="history-info"></span>
+        </div>
+        <div id="real-area"></div>
+        <textarea id="test-area"></textarea>
+        <div id="diff-log"></div>
+        <div id="vdom-tree"></div>
+      `;
+    }
+
+    async function bootApp(label) {
+      buildFixture();
+      const mod = await import(`../src/app.js?case=${encodeURIComponent(label)}-${Date.now()}-${Math.random()}`);
+      mod.init();
+      return {
+        realArea: document.getElementById('real-area'),
+        testArea: document.getElementById('test-area'),
+        patchBtn: document.getElementById('btn-patch'),
+        undoBtn: document.getElementById('btn-undo'),
+        redoBtn: document.getElementById('btn-redo'),
+        diffLog: document.getElementById('diff-log'),
+        vdomTree: document.getElementById('vdom-tree'),
+        historyInfo: document.getElementById('history-info'),
+      };
+    }
+
+    async function runCase(name, fn) {
+      try {
+        await fn();
+        console.log(`PASS: ${name}`);
+      } catch (error) {
+        console.error(`FAIL: ${name}`, error);
+        assert(false, `${name} - ${error.message}`);
+      }
+    }
+
+    function click(el) {
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+
+    function normalize(html) {
+      return html.replace(/\s+/g, ' ').trim();
+    }
+
+    await runCase('init: 초기 DOM과 버튼 상태를 세팅한다', async () => {
+      const app = await bootApp('init');
+
+      assert(app.realArea.querySelector('#app') !== null, '초기 루트가 렌더링된다');
+      assert(app.testArea.value.trim().length > 0, '초기 HTML이 textarea에 채워진다');
+      assert(app.undoBtn.disabled === true, '초기 undo는 비활성화된다');
+      assert(app.redoBtn.disabled === true, '초기 redo는 비활성화된다');
+      assert(app.historyInfo.textContent.includes('1 / 1'), '초기 히스토리 정보가 표시된다');
+      assert(app.diffLog.textContent.includes('변경'), '초기 diff 로그가 빈 상태를 보여준다');
+      assert(app.vdomTree.textContent.trim().length > 0, '초기 VDOM 트리가 렌더링된다');
+    });
+
+    await runCase('patch: 유효한 HTML 입력 시 실제 DOM과 히스토리가 갱신된다', async () => {
+      const app = await bootApp('patch-valid');
+      app.testArea.value = `
+        <div id="app">
+          <h1>Updated List</h1>
+          <ul>
+            <li class="done" data-key="item-1">Milk</li>
+            <li data-key="item-2">Eggs</li>
+            <li data-key="item-3">Bread</li>
+          </ul>
+          <p class="count">3 items</p>
+        </div>
+      `.trim();
+
+      click(app.patchBtn);
+
+      assert(app.realArea.querySelector('h1')?.textContent === 'Updated List', 'real DOM 텍스트가 변경된다');
+      assert(app.undoBtn.disabled === false, 'patch 후 undo가 가능해진다');
+      assert(app.redoBtn.disabled === true, 'patch 직후 redo는 비활성화다');
+      assert(app.historyInfo.textContent.includes('2 / 2'), '히스토리가 2개 상태를 가리킨다');
+      assert(app.diffLog.textContent.trim().length > 0, 'diff 로그가 갱신된다');
+    });
+
+    await runCase('patch: 빈 입력은 무시된다', async () => {
+      const app = await bootApp('patch-empty');
+      const before = normalize(app.realArea.innerHTML);
+
+      app.testArea.value = '   ';
+      click(app.patchBtn);
+
+      assert(normalize(app.realArea.innerHTML) === before, 'real DOM이 유지된다');
+      assert(app.historyInfo.textContent.includes('1 / 1'), '히스토리가 증가하지 않는다');
+      assert(app.undoBtn.disabled === true, 'undo 상태가 그대로다');
+    });
+
+    await runCase('patch: 파싱 가능한 루트 엘리먼트가 없으면 alert 후 중단한다', async () => {
+      const app = await bootApp('patch-invalid');
+      const before = normalize(app.realArea.innerHTML);
+      const alerts = [];
+      const originalAlert = window.alert;
+      window.alert = (message) => alerts.push(message);
+
+      try {
+        app.testArea.value = 'plain text only';
+        click(app.patchBtn);
+      } finally {
+        window.alert = originalAlert;
+      }
+
+      assert(alerts.length === 1, 'alert가 1회 호출된다');
+      assert(normalize(app.realArea.innerHTML) === before, 'real DOM이 유지된다');
+      assert(app.historyInfo.textContent.includes('1 / 1'), '히스토리가 증가하지 않는다');
+    });
+
+    await runCase('undo / redo: patch 이후 이전 상태와 다음 상태로 이동한다', async () => {
+      const app = await bootApp('undo-redo');
+      app.testArea.value = `
+        <div id="app">
+          <h1>Shopping List</h1>
+          <ul>
+            <li class="done" data-key="item-1">Milk</li>
+            <li data-key="item-2">Yogurt</li>
+            <li data-key="item-3">Bread</li>
+          </ul>
+          <p class="count">3 items</p>
+        </div>
+      `.trim();
+
+      click(app.patchBtn);
+      assert(app.realArea.textContent.includes('Yogurt'), 'patch 결과가 반영된다');
+
+      click(app.undoBtn);
+      assert(app.realArea.textContent.includes('Eggs'), 'undo 후 이전 상태로 복원된다');
+      assert(app.testArea.value.includes('Eggs'), 'textarea도 이전 상태로 복원된다');
+      assert(app.redoBtn.disabled === false, 'undo 후 redo가 가능해진다');
+
+      click(app.redoBtn);
+      assert(app.realArea.textContent.includes('Yogurt'), 'redo 후 다음 상태로 복원된다');
+      assert(app.testArea.value.includes('Yogurt'), 'textarea도 다음 상태로 복원된다');
+    });
+
+    await runCase('redo stack: undo 후 새 patch를 하면 redo 이력이 사라진다', async () => {
+      const app = await bootApp('redo-cleared');
+
+      app.testArea.value = `
+        <div id="app">
+          <h1>First Patch</h1>
+          <ul>
+            <li class="done" data-key="item-1">Milk</li>
+            <li data-key="item-2">Eggs</li>
+            <li data-key="item-3">Bread</li>
+          </ul>
+          <p class="count">3 items</p>
+        </div>
+      `.trim();
+      click(app.patchBtn);
+
+      click(app.undoBtn);
+
+      app.testArea.value = `
+        <div id="app">
+          <h1>Second Patch</h1>
+          <ul>
+            <li class="done" data-key="item-1">Milk</li>
+            <li data-key="item-2">Eggs</li>
+            <li data-key="item-3">Bread</li>
+          </ul>
+          <p class="count">3 items</p>
+        </div>
+      `.trim();
+      click(app.patchBtn);
+
+      assert(app.realArea.querySelector('h1')?.textContent === 'Second Patch', '새 patch가 반영된다');
+      assert(app.redoBtn.disabled === true, 'redo 이력이 제거된다');
+      assert(app.historyInfo.textContent.includes('2 / 2'), '히스토리가 새 분기로 갱신된다');
+    });
+
+    renderResults();
+  </script>
+</body>
+</html>
