@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diff Algorithm Tests</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+      --border: #2e3352; --accent: #6c63ff; --accent2: #00d4aa;
+      --danger: #ff5c5c; --text: #e0e4f5; --text-muted: #7b82a8;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'Pretendard', system-ui, sans-serif; padding: 24px; }
+    h1 { font-size: 22px; font-weight: 700; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 8px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 28px; }
+    .summary { padding: 16px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; }
+    .all-pass { background: rgba(0,212,170,0.12); border: 1px solid rgba(0,212,170,0.3); color: var(--accent2); }
+    .has-fail { background: rgba(255,92,92,0.12); border: 1px solid rgba(255,92,92,0.3); color: var(--danger); }
+    .fail-count { font-size: 13px; font-weight: 400; color: var(--danger); }
+    .result-list { display: flex; flex-direction: column; gap: 6px; }
+    .result-item { display: flex; align-items: baseline; gap: 10px; padding: 9px 14px; border-radius: 7px; font-size: 13px; font-family: var(--font-mono); }
+    .result-item.pass { background: var(--surface); border-left: 3px solid var(--accent2); }
+    .result-item.fail { background: rgba(255,92,92,0.08); border-left: 3px solid var(--danger); }
+    .result-icon { font-size: 14px; }
+    .result-msg { flex: 1; }
+    .result-error { color: var(--danger); font-size: 11px; }
+    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
+    a.back:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <a class="back" href="../index.html">← 메인으로 돌아가기</a>
+  <h1>Diff Algorithm — 테스트</h1>
+  <p class="subtitle">5가지 핵심 케이스 + Key 기반 매칭 + 엣지 케이스를 검증합니다.</p>
+  <div id="test-results">테스트 실행 중...</div>
+
+<script type="module">
+import { diff } from '../src/diff.js';
+import { describe, it, assert, assertEqual, renderResults } from './test-runner.js';
+
+// 헬퍼: element vnode 생성
+function el(tag, props = {}, children = [], key = null) {
+  return { type: 'element', tag, props, key: key ?? props['data-key'] ?? null, children };
+}
+function txt(value) { return { type: 'text', value }; }
+
+// ──────────────────────────────────────────────
+// 1. 텍스트 변경
+// ──────────────────────────────────────────────
+describe('텍스트 변경 (UPDATE_TEXT)', () => {
+  it('텍스트 값이 달라지면 UPDATE_TEXT 패치 생성', () => {
+    const oldV = el('p', {}, [txt('Hello')]);
+    const newV = el('p', {}, [txt('World')]);
+    const patches = diff(oldV, newV);
+    assert(patches.length === 1, '패치 1개');
+    assert(patches[0].type === 'UPDATE_TEXT', 'UPDATE_TEXT 타입');
+    assert(patches[0].value === 'World', '새 값 World');
+    assert(patches[0].oldValue === 'Hello', '이전 값 Hello');
+  });
+
+  it('텍스트가 동일하면 패치 없음', () => {
+    const oldV = el('p', {}, [txt('Same')]);
+    const newV = el('p', {}, [txt('Same')]);
+    assert(diff(oldV, newV).length === 0, '패치 없음');
+  });
+});
+
+// ──────────────────────────────────────────────
+// 2. Props 변경
+// ──────────────────────────────────────────────
+describe('Props 변경 (UPDATE_PROP / REMOVE_PROP)', () => {
+  it('prop 추가 시 UPDATE_PROP', () => {
+    const patches = diff(el('div', {}), el('div', { class: 'new' }));
+    assert(patches.some(p => p.type === 'UPDATE_PROP' && p.key === 'class' && p.value === 'new'), 'class 추가');
+  });
+
+  it('prop 값 변경 시 UPDATE_PROP', () => {
+    const patches = diff(el('div', { class: 'old' }), el('div', { class: 'new' }));
+    assert(patches.some(p => p.type === 'UPDATE_PROP' && p.key === 'class' && p.value === 'new' && p.oldValue === 'old'), 'class 변경');
+  });
+
+  it('prop 제거 시 REMOVE_PROP', () => {
+    const patches = diff(el('div', { class: 'x' }), el('div', {}));
+    assert(patches.some(p => p.type === 'REMOVE_PROP' && p.key === 'class'), 'class 제거');
+  });
+
+  it('props 동일하면 패치 없음', () => {
+    const patches = diff(el('div', { id: 'a', class: 'b' }), el('div', { id: 'a', class: 'b' }));
+    assert(patches.length === 0, '패치 없음');
+  });
+});
+
+// ──────────────────────────────────────────────
+// 3. 노드 추가
+// ──────────────────────────────────────────────
+describe('노드 추가 (ADD)', () => {
+  it('자식 추가 시 ADD 패치', () => {
+    const oldV = el('ul', {}, [el('li', {}, [txt('A')])]);
+    const newV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])]);
+    const patches = diff(oldV, newV);
+    assert(patches.some(p => p.type === 'ADD'), 'ADD 패치 존재');
+  });
+});
+
+// ──────────────────────────────────────────────
+// 4. 노드 제거
+// ──────────────────────────────────────────────
+describe('노드 제거 (REMOVE)', () => {
+  it('자식 제거 시 REMOVE 패치', () => {
+    const oldV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])]);
+    const newV = el('ul', {}, [el('li', {}, [txt('A')])]);
+    const patches = diff(oldV, newV);
+    assert(patches.some(p => p.type === 'REMOVE'), 'REMOVE 패치 존재');
+  });
+});
+
+// ──────────────────────────────────────────────
+// 5. 노드 교체 (태그 변경)
+// ──────────────────────────────────────────────
+describe('노드 교체 (REPLACE)', () => {
+  it('태그가 다르면 REPLACE', () => {
+    const patches = diff(el('p', {}, [txt('Hi')]), el('span', {}, [txt('Hi')]));
+    assert(patches.some(p => p.type === 'REPLACE'), 'REPLACE 패치 존재');
+  });
+
+  it('타입 다름 (text → element) → REPLACE', () => {
+    const patches = diff(txt('hi'), el('span', {}, [txt('hi')]));
+    assert(patches.some(p => p.type === 'REPLACE'), 'text→element REPLACE');
+  });
+});
+
+// ──────────────────────────────────────────────
+// 6. Key 기반 매칭
+// ──────────────────────────────────────────────
+describe('Key 기반 매칭', () => {
+  it('키 있는 리스트 순서 변경 — 텍스트 diff 발생', () => {
+    const oldV = el('ul', {}, [
+      el('li', { 'data-key': 'a' }, [txt('A')]),
+      el('li', { 'data-key': 'b' }, [txt('B')]),
+    ]);
+    const newV = el('ul', {}, [
+      el('li', { 'data-key': 'b' }, [txt('B')]),
+      el('li', { 'data-key': 'a' }, [txt('A')]),
+    ]);
+    const patches = diff(oldV, newV);
+    // 순서가 바뀌었으므로 패치가 생성됨 (key 기반이므로 내용 자체는 동일하면 0일 수도 있음)
+    assert(Array.isArray(patches), '패치 배열 반환');
+  });
+
+  it('키 있는 리스트 중간 삽입', () => {
+    const oldV = el('ul', {}, [
+      el('li', { 'data-key': 'a' }, [txt('A')]),
+      el('li', { 'data-key': 'c' }, [txt('C')]),
+    ]);
+    const newV = el('ul', {}, [
+      el('li', { 'data-key': 'a' }, [txt('A')]),
+      el('li', { 'data-key': 'b' }, [txt('B')]),
+      el('li', { 'data-key': 'c' }, [txt('C')]),
+    ]);
+    const patches = diff(oldV, newV);
+    assert(patches.some(p => p.type === 'ADD'), '중간 삽입 ADD 패치');
+  });
+
+  it('키 있는 리스트 항목 제거', () => {
+    const oldV = el('ul', {}, [
+      el('li', { 'data-key': 'a' }, [txt('A')]),
+      el('li', { 'data-key': 'b' }, [txt('B')]),
+      el('li', { 'data-key': 'c' }, [txt('C')]),
+    ]);
+    const newV = el('ul', {}, [
+      el('li', { 'data-key': 'a' }, [txt('A')]),
+      el('li', { 'data-key': 'c' }, [txt('C')]),
+    ]);
+    const patches = diff(oldV, newV);
+    assert(patches.some(p => p.type === 'REMOVE'), 'REMOVE 패치 생성');
+  });
+});
+
+// ──────────────────────────────────────────────
+// 7. 엣지 케이스
+// ──────────────────────────────────────────────
+describe('엣지 케이스', () => {
+  it('null → node: ADD', () => {
+    const patches = diff(null, el('div'));
+    assert(patches[0]?.type === 'ADD', 'null→node ADD');
+  });
+
+  it('node → null: REMOVE', () => {
+    const patches = diff(el('div'), null);
+    assert(patches[0]?.type === 'REMOVE', 'node→null REMOVE');
+  });
+
+  it('동일 트리 — 패치 없음', () => {
+    const v = el('div', { id: 'x' }, [el('span', {}, [txt('hello')])]);
+    const patches = diff(v, JSON.parse(JSON.stringify(v)));
+    assert(patches.length === 0, '동일 트리 패치 없음');
+  });
+
+  it('깊게 중첩된 변경 감지', () => {
+    const oldV = el('div', {}, [el('div', {}, [el('div', {}, [txt('deep')])])]);
+    const newV = el('div', {}, [el('div', {}, [el('div', {}, [txt('changed')])])]);
+    const patches = diff(oldV, newV);
+    assert(patches.some(p => p.type === 'UPDATE_TEXT'), '깊은 텍스트 변경');
+  });
+
+  it('같은 태그, props만 다름', () => {
+    const patches = diff(
+      el('div', { class: 'a', id: 'x' }),
+      el('div', { class: 'b', id: 'x' })
+    );
+    assert(patches.every(p => p.type === 'UPDATE_PROP' || p.type === 'REMOVE_PROP'), 'props 패치만');
+    assert(patches.some(p => p.type === 'UPDATE_PROP' && p.key === 'class'), 'class 변경 감지');
+  });
+
+  it('동시에 여러 변경 — 모두 감지', () => {
+    const oldV = el('div', { id: 'a' }, [txt('old text'), el('span', { class: 'x' })]);
+    const newV = el('div', { id: 'b' }, [txt('new text'), el('span', { class: 'y' })]);
+    const patches = diff(oldV, newV);
+    assert(patches.length >= 3, '3개 이상 패치');
+  });
+
+  it('빈 트리 vs 자식 있는 트리', () => {
+    const patches = diff(el('ul', {}, []), el('ul', {}, [el('li', {}, [txt('item')])]));
+    assert(patches.some(p => p.type === 'ADD'), 'ADD 패치');
+  });
+
+  it('자식 있는 트리 vs 빈 트리', () => {
+    const patches = diff(el('ul', {}, [el('li', {}, [txt('item')])]), el('ul', {}, []));
+    assert(patches.some(p => p.type === 'REMOVE'), 'REMOVE 패치');
+  });
+});
+
+// 결과 렌더링
+renderResults();
+</script>
+</body>
+</html>

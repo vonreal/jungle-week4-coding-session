@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Virtual DOM & Diff Algorithm</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Virtual DOM &amp; Diff Algorithm</h1>
+  </div>
+  <p>React 핵심 개념을 Vanilla JS로 구현한 인터랙티브 데모</p>
+</header>
+
+<main>
+
+  <!-- 툴바 -->
+  <div class="toolbar">
+    <span class="toolbar-label">조작:</span>
+    <button class="btn btn-primary" id="btn-patch">⚡ Patch 적용</button>
+    <button class="btn btn-secondary" id="btn-undo">← 뒤로가기</button>
+    <button class="btn btn-secondary" id="btn-redo">앞으로가기 →</button>
+    <span class="history-info" id="history-info">히스토리: - / -</span>
+  </div>
+
+  <!-- 실제 영역 + 테스트 영역 -->
+  <div class="areas-grid">
+
+    <!-- 실제 영역 (Real DOM) -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">실제 영역 <span class="badge badge-real">Real DOM</span></span>
+        <span style="font-size:11px;color:var(--text-muted);">Patch 결과가 반영됩니다</span>
+      </div>
+      <div class="panel-body">
+        <div id="real-area"></div>
+      </div>
+    </div>
+
+    <!-- 테스트 영역 (HTML 편집) -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">테스트 영역 <span class="badge badge-test">HTML Editor</span></span>
+        <span style="font-size:11px;color:var(--text-muted);">HTML 소스를 자유롭게 수정하세요</span>
+      </div>
+      <div class="panel-body">
+        <textarea id="test-area" spellcheck="false" autocomplete="off"></textarea>
+        <p class="test-hint">💡 HTML을 수정 후 "Patch 적용" 버튼을 눌러 변경사항을 확인하세요.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 하단: Diff 로그 + VDOM 트리 -->
+  <div class="bottom-grid">
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Diff 로그</span>
+        <span style="font-size:11px;color:var(--text-muted);">패치 배열 상세 정보</span>
+      </div>
+      <div class="panel-body">
+        <div id="diff-log">
+          <div class="log-empty">Patch를 적용하면 diff 결과가 표시됩니다.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">VDOM 트리</span>
+        <span style="font-size:11px;color:var(--text-muted);">보라색 = 변경된 노드</span>
+      </div>
+      <div class="panel-body">
+        <div id="vdom-tree">
+          <div class="tree-empty">VDOM 트리가 여기에 표시됩니다.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<script type="module">
+  import { init } from './src/app.js';
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>
