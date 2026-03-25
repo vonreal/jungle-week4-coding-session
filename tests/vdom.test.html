@@ -11,11 +11,32 @@
       --border: #d6deea; --accent: #2952cc; --accent2: #0f9d7a;
       --danger: #d14343; --text: #1f2937; --text-muted: #6b7280;
       --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --font-sans: 'Pretendard', system-ui, sans-serif;
     }
-    body { background: var(--bg); color: var(--text); font-family: 'Pretendard', system-ui, sans-serif; padding: 24px; }
-    h1 { font-size: 22px; font-weight: 700; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 8px; }
-    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 28px; }
-    .summary { padding: 16px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); padding: 24px 18px 56px; min-height: 100vh; }
+
+    .page { max-width: 1100px; margin: 0 auto; }
+
+    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
+    a.back:hover { text-decoration: underline; }
+
+    .hero { background: linear-gradient(135deg, rgba(41,82,204,0.07), rgba(15,157,122,0.05)); border: 1px solid rgba(41,82,204,0.15); border-radius: 20px; padding: 24px; margin-bottom: 24px; }
+    h1 { font-size: clamp(20px, 3vw, 32px); font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 6px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+
+    /* ── 레이아웃 ── */
+    .layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.8fr); gap: 20px; align-items: start; }
+    @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+    /* ── 패널 공통 ── */
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; box-shadow: 0 4px 16px rgba(15,23,42,0.06); }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+    .panel-head h2 { font-size: 15px; font-weight: 700; }
+    .panel-head p { color: var(--text-muted); font-size: 12px; margin-top: 3px; }
+
+    /* ── 테스트 결과 ── */
+    #test-results { padding: 16px; }
+    .summary { padding: 14px 18px; border-radius: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 700; }
     .all-pass { background: rgba(15,157,122,0.1); border: 1px solid rgba(15,157,122,0.25); color: var(--accent2); }
     .has-fail { background: rgba(209,67,67,0.1); border: 1px solid rgba(209,67,67,0.25); color: var(--danger); }
     .fail-count { font-size: 13px; font-weight: 400; color: var(--danger); }
@@ -26,20 +47,93 @@
     .result-icon { font-size: 14px; }
     .result-msg { flex: 1; }
     .result-error { color: var(--danger); font-size: 11px; }
-    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
-    a.back:hover { text-decoration: underline; }
+
+    /* ── 미리보기 패널 ── */
+    .preview { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .preview-card { border: 1px dashed rgba(41,82,204,0.25); border-radius: 12px; padding: 12px; background: rgba(41,82,204,0.02); }
+    .preview-card h3 { font-size: 12px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
+    .preview-card p { color: var(--text-muted); font-size: 12px; line-height: 1.6; margin-bottom: 8px; }
+    .fixture { min-height: 72px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); padding: 10px 12px; font-size: 13px; word-break: break-word; }
+    .fixture-label { color: var(--text-muted); font-size: 12px; font-family: var(--font-mono); line-height: 1.55; }
+    .module-info { color: var(--text-muted); font-size: 12px; line-height: 1.7; }
+    .module-info strong { color: var(--accent); }
   </style>
 </head>
 <body>
+<div class="page">
   <a class="back" href="../index.html">← 메인으로 돌아가기</a>
-  <h1>VDOM Tests</h1>
-  <p class="subtitle">딸기 담당: VDOM 계약을 테스트로 고정합니다.</p>
-  <div id="test-results">테스트 실행 중...</div>
+
+  <section class="hero">
+    <h1>VDOM Tests</h1>
+    <p class="subtitle">딸기 담당: VDOM 계약을 테스트로 고정합니다.</p>
+  </section>
+
+  <section class="layout">
+    <!-- 테스트 결과 패널 -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>테스트 결과</h2>
+          <p>페이지 로드 시 자동으로 실행됩니다.</p>
+        </div>
+      </div>
+      <div id="test-results">테스트 실행 중...</div>
+    </div>
+
+    <!-- 미리보기 패널 -->
+    <aside class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>실행 중인 테스트</h2>
+          <p>마지막으로 실행된 케이스입니다.</p>
+        </div>
+      </div>
+      <div class="preview">
+        <section class="preview-card">
+          <h3>테스트 케이스</h3>
+          <div id="current-test" class="fixture fixture-label">대기 중...</div>
+        </section>
+        <section class="preview-card">
+          <h3>DOM 출력 (vdomToDom 결과)</h3>
+          <p>마지막으로 생성된 실제 DOM입니다.</p>
+          <div id="fixture" class="fixture"></div>
+        </section>
+        <section class="preview-card">
+          <h3>모듈 정보</h3>
+          <div class="module-info">
+            <strong>vdom.js</strong> — 가상 DOM 유틸리티<br><br>
+            <strong>주요 API</strong><br>
+            createElement · createText<br>
+            vdomToDom · domToVdom · cloneVdom
+          </div>
+        </section>
+      </div>
+    </aside>
+  </section>
+</div>
 
 <script type="module">
-import { createElement, createText, domToVdom, vdomToDom, cloneVdom } from '../src/vdom.js';
+import { createElement, createText, domToVdom, vdomToDom as _vdomToDom, cloneVdom } from '../src/vdom.js';
 import { init } from '../src/app.js';
-import { describe, it, assertEqual, renderResults } from './test-runner.js';
+import { describe, it as _it, assertEqual, renderResults } from './test-runner.js';
+
+// 실행 중인 테스트 이름을 미리보기 패널에 업데이트
+function it(name, fn) {
+  const el = document.getElementById('current-test');
+  if (el) el.textContent = name;
+  return _it(name, fn);
+}
+
+// vdomToDom 래핑 — 결과 DOM을 fixture에 표시
+const fixture = document.getElementById('fixture');
+function vdomToDom(vnode) {
+  const dom = _vdomToDom(vnode);
+  if (fixture && dom) {
+    fixture.innerHTML = '';
+    fixture.appendChild(dom.cloneNode(true));
+  }
+  return dom;
+}
 
 const indexHtmlText = await fetch('../index.html').then(res => res.text());
 const indexDoc = new DOMParser().parseFromString(indexHtmlText, 'text/html');
