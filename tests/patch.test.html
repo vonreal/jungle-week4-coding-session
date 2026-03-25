@@ -277,9 +277,9 @@ function renderResults() {
   // 요약 배너: 전체 통과/실패 수
   const summaryHtml = `
     <div class="summary ${allPass ? 'all-pass' : 'has-fail'}">
-      <span>${allPass ? '🎉' : '⚠️'}</span>
-      <strong>${passCount} / ${total} 통과</strong>
-      ${failCount > 0 ? `<span class="fail-count">${failCount}개 실패</span>` : ''}
+      ${allPass
+        ? `✅ 전체 통과 — ${total}개`
+        : `❌ ${failCount}개 실패 <span class="fail-count">(총 ${total}개)</span>`}
     </div>`;
 
   // 그룹별 테스트 목록: pass는 초록, fail은 빨간 배경
@@ -288,7 +288,7 @@ function renderResults() {
     <div class="result-list">
       ${g.items.map(r => `
         <div class="result-item ${r.pass ? 'pass' : 'fail'}">
-          <span>${r.pass ? '✅' : '❌'}</span>
+          <span class="result-icon">${r.pass ? '✔' : '✘'}</span>
           <div class="result-content">
             <span>${r.message}</span>
             ${r.error ? `<div class="result-error">${escapeHtml(r.error)}</div>` : ''}
