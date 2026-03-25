@@ -19,10 +19,11 @@ const INITIAL_HTML = `<div id="app">
 // 전역 상태
 let currentVdom = null;
 let htmlSnapshots = [];
+let alertTimer = null;
 const history = new History();
 
 // DOM 참조
-let realArea, testArea, patchBtn, undoBtn, redoBtn, diffLog, vdomTree, historyInfo;
+let realArea, testArea, patchBtn, undoBtn, redoBtn, diffLog, vdomTree, historyInfo, appAlert;
 
 /**
  * 앱 초기화
@@ -36,6 +37,7 @@ export function init() {
   diffLog = document.getElementById('diff-log');
   vdomTree = document.getElementById('vdom-tree');
   historyInfo = document.getElementById('history-info');
+  appAlert = document.getElementById('app-alert');
 
   const initialHtml = INITIAL_HTML.trim();
 
@@ -77,14 +79,14 @@ function onPatch() {
   const doc = parser.parseFromString(htmlSource, 'text/html');
   const appEl = doc.body.firstElementChild;
   if (!appEl) {
-    alert('유효한 HTML을 입력해주세요.');
+    showAlert('유효한 HTML을 입력해주세요.');
     return;
   }
 
   const newVdom = domToVdom(appEl);
   const duplicateKeyError = findDuplicateKeyError(newVdom);
   if (duplicateKeyError) {
-    alert(duplicateKeyError);
+    showAlert(duplicateKeyError);
     return;
   }
 
@@ -106,6 +108,22 @@ function onPatch() {
   updateUI();
   setDiffLog(patches);
   renderVdomTree(currentVdom, prevVdom);
+}
+
+function showAlert(message) {
+  if (!appAlert) return;
+
+  appAlert.textContent = message;
+  appAlert.hidden = false;
+
+  if (alertTimer) {
+    clearTimeout(alertTimer);
+  }
+
+  alertTimer = window.setTimeout(() => {
+    appAlert.hidden = true;
+    alertTimer = null;
+  }, 3200);
 }
 
 function findDuplicateKeyError(vnode, path = 'root') {
