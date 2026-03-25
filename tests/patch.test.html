@@ -97,18 +97,26 @@
 
     .result-list { display: flex; flex-direction: column; gap: 6px; }
     .result-item {
-      display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start;
+      display: flex; flex-direction: row;
+      gap: 10px; align-items: flex-start;
       padding: 10px 14px; border-radius: 10px;
       font-size: 12.5px; font-family: var(--font-mono); line-height: 1.55;
     }
+    .result-item > span:first-child { flex-shrink: 0; }  /* 아이콘 고정 */
     .result-item.pass {
       background: rgba(0,212,170,0.07); border: 1px solid rgba(0,212,170,0.15);
     }
     .result-item.fail {
       background: rgba(255,92,92,0.08); border: 1px solid rgba(255,92,92,0.2);
     }
+    .result-content {
+      display: flex; flex-direction: column; gap: 2px;
+      flex: 1;       /* 남은 공간 전부 차지 */
+      min-width: 0;  /* flex 자식의 텍스트 줄바꿈 허용 */
+    }
     .result-error {
-      grid-column: 2; color: var(--danger); font-size: 11px; margin-top: 3px;
+      color: var(--danger); font-size: 11px; margin-top: 2px;
+      word-break: break-word;
     }
 
     /* ── 미리보기 패널 ── */
@@ -276,8 +284,10 @@ function renderResults() {
       ${g.items.map(r => `
         <div class="result-item ${r.pass ? 'pass' : 'fail'}">
           <span>${r.pass ? '✅' : '❌'}</span>
-          <span>${r.message}</span>
-          ${r.error ? `<div class="result-error">${r.error}</div>` : ''}
+          <div class="result-content">
+            <span>${r.message}</span>
+            ${r.error ? `<div class="result-error">${r.error}</div>` : ''}
+          </div>
         </div>
       `).join('')}
     </div>
