@@ -213,7 +213,7 @@
         </section>
         <div class="note">
           ⚠️ <code>REMOVE</code> 패치는 구현상 400ms 지연 뒤 실제 삭제됩니다.
-          해당 테스트는 <code>wait(460)</code>으로 완료를 기다린 뒤 검증합니다.
+          해당 테스트는 <code>wait(430)</code>으로 완료를 기다린 뒤 검증합니다.
         </div>
       </div>
     </aside>
@@ -318,8 +318,10 @@ function txt(value) { return createText(value); }
 
 // wait(ms) : ms 밀리초 뒤 resolve되는 Promise
 //   REMOVE 패치는 patch.js 내부에서 setTimeout 400ms 후 실제 삭제되므로
-//   그 완료를 기다릴 때 사용한다. 예) await wait(460)
+//   그 완료를 기다릴 때 사용한다. 예) await wait(430)
 function wait(ms)   { return new Promise(r => setTimeout(r, ms)); }
+
+const REMOVE_WAIT_MS = 430;
 
 const fixture = document.getElementById('fixture'); // DOM이 마운트될 컨테이너
 
@@ -575,7 +577,7 @@ async function runTests() {
       ]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(480); // REMOVE 패치가 있을 경우를 대비해 지연 대기
+      await wait(REMOVE_WAIT_MS); // REMOVE 패치가 있을 경우를 대비해 지연 대기
       const items = [...root.querySelectorAll('li')].map(n => n.textContent);
       if (items.join(',') !== 'A,B,C')
         throw new Error(`중간 삽입 후 A,B,C여야 합니다. 실제: ${items.join(',')}`);
@@ -640,7 +642,7 @@ async function runTests() {
       const newV = el('ul', {}, [el('li', { 'data-key': 'a' }, [txt('A')])]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(460); // patch.js의 setTimeout 400ms 완료를 기다림 (여유 60ms)
+      await wait(REMOVE_WAIT_MS); // patch.js의 setTimeout 400ms 완료를 기다림 (여유 30ms)
       // 지연 후: B 노드가 실제로 사라져야 함
       if (root.querySelector('li[data-key="b"]'))
         throw new Error('지연 후에도 삭제 대상 노드가 남아 있습니다.');
@@ -654,7 +656,7 @@ async function runTests() {
       const newV = el('ul', {}); // 자식 없음
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(460);
+      await wait(REMOVE_WAIT_MS);
       if (root.childNodes.length !== 0)
         throw new Error(`부모가 비어있어야 합니다. childNodes: ${root.childNodes.length}`);
     });
@@ -753,7 +755,7 @@ async function runTests() {
       ]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(480); // REMOVE 지연 완료 대기
+      await wait(REMOVE_WAIT_MS); // REMOVE 지연 완료 대기
 
       // normalizedHtml()으로 하이라이트 클래스 제거 후 문자열 비교
       const expected = vdomToDom(newV);
@@ -790,7 +792,7 @@ async function runTests() {
       ]);
       const root = mount(oldV);
       applyPatches(root, diff(oldV, newV));
-      await wait(480); // REMOVE 지연 완료 대기
+      await wait(REMOVE_WAIT_MS); // REMOVE 지연 완료 대기
       const items = [...root.querySelectorAll('li')].map(n => n.textContent);
       if (!items.includes('A')) throw new Error('A가 없습니다.');
       if (!items.includes('C')) throw new Error('C가 추가되지 않았습니다.');
@@ -915,7 +917,7 @@ async function runTests() {
       // Array.from(childNodes)[1] = li(a)  ← A 자체!
       // insertBefore(li(B), li(a)) → B가 A 앞에 삽입됨
       applyPatches(dom, diff(oldV, newV));
-      await wait(480);
+      await wait(REMOVE_WAIT_MS);
 
       const items = [...dom.querySelectorAll('li')].map(n => n.textContent);
       // 기댓값: 'A,B,C'   실젯값(버그): 'B,A,C'
@@ -930,7 +932,7 @@ async function runTests() {
   // #2. 순서대로 실행 ── 큐 실행 루프 ─────────────────────────────────────────────────────────
   // describe() 단계에서 itQueue에 쌓아둔 테스트를 여기서 순서대로 실행한다.
   // await fn()으로 각 테스트가 완전히 끝날 때까지 기다린 뒤 다음으로 넘어간다.
-  // → wait(460) 같은 비동기 대기도 올바르게 처리된다.
+  // → wait(430) 같은 비동기 대기도 올바르게 처리된다.
   for (const { name, fn, group } of itQueue) {
     try {
       await fn();      // 테스트 함수 실행 (async 완료까지 대기)
