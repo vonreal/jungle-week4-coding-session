@@ -181,6 +181,22 @@ describe('Key 기반 매칭', () => {
     assert(patches.length === 0, '동일 key/내용 순서 변경만으로는 패치 없음');
   });
 
+  it('중복 key가 있더라도 첫 번째 중복 노드 제거를 놓치지 않아야 한다', () => {
+    const oldV = el('ul', {}, [
+      el('li', { 'data-key': 'dup' }, [txt('First')]),
+      el('li', { 'data-key': 'dup' }, [txt('Second')]),
+    ]);
+    const newV = el('ul', {}, [
+      el('li', { 'data-key': 'dup' }, [txt('Second')]),
+    ]);
+    const patches = diff(oldV, newV);
+
+    assert(
+      patches.some(p => p.type === 'REMOVE' && p.path.join(',') === '0'),
+      '첫 번째 중복 key 노드 제거도 감지되어야 한다'
+    );
+  });
+
   it('키 있는 리스트 중간 삽입', () => {
     const oldV = el('ul', {}, [
       el('li', { 'data-key': 'a' }, [txt('A')]),
@@ -267,6 +283,14 @@ describe('엣지 케이스', () => {
     const v = el('div', { id: 'x' }, [el('span', {}, [txt('hello')])]);
     const patches = diff(v, JSON.parse(JSON.stringify(v)));
     assert(patches.length === 0, '동일 트리 패치 없음');
+  });
+
+  it('style 객체 내용이 같으면 참조가 달라도 패치가 없어야 한다', () => {
+    const patches = diff(
+      el('div', { style: { color: 'red', backgroundColor: 'blue' } }),
+      el('div', { style: { color: 'red', backgroundColor: 'blue' } })
+    );
+    assert(patches.length === 0, '동일한 style 객체 내용이면 패치 없음');
   });
 
   it('깊게 중첩된 변경 감지', () => {
