@@ -261,6 +261,11 @@ function it(name, fn) {
   itQueue.push({ name, fn, group: groups[groups.length - 1] });
 }
 
+// escapeHtml(str) : HTML 특수문자를 이스케이프해 innerHTML 삽입 시 태그로 해석되지 않게 한다
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // renderResults()
 // → groups 배열을 순회하며 pass/fail 결과를 HTML로 변환해 화면에 출력한다
 function renderResults() {
@@ -286,7 +291,7 @@ function renderResults() {
           <span>${r.pass ? '✅' : '❌'}</span>
           <div class="result-content">
             <span>${r.message}</span>
-            ${r.error ? `<div class="result-error">${r.error}</div>` : ''}
+            ${r.error ? `<div class="result-error">${escapeHtml(r.error)}</div>` : ''}
           </div>
         </div>
       `).join('')}
