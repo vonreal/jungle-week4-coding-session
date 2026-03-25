@@ -72,22 +72,24 @@ export function init() {
  */
 function onPatch() {
   const htmlSource = testArea.value.trim();
-  if (!htmlSource) return;
+  let newVdom = null;
 
-  // 새 VDOM 생성
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(htmlSource, 'text/html');
-  const appEl = doc.body.firstElementChild;
-  if (!appEl) {
-    showAlert('유효한 HTML을 입력해주세요.');
-    return;
-  }
+  if (htmlSource) {
+    // 새 VDOM 생성
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlSource, 'text/html');
+    const appEl = doc.body.firstElementChild;
+    if (!appEl) {
+      showAlert('유효한 HTML을 입력해주세요.');
+      return;
+    }
 
-  const newVdom = domToVdom(appEl);
-  const duplicateKeyError = findDuplicateKeyError(newVdom);
-  if (duplicateKeyError) {
-    showAlert(duplicateKeyError);
-    return;
+    newVdom = domToVdom(appEl);
+    const duplicateKeyError = findDuplicateKeyError(newVdom);
+    if (duplicateKeyError) {
+      showAlert(duplicateKeyError);
+      return;
+    }
   }
 
   // Diff
