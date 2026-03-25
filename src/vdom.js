@@ -58,7 +58,7 @@ export function domToVdom(node) {
       const vchild = domToVdom(child);
       if (vchild !== null) {
         // 순수 공백 텍스트 노드는 제외
-        if (vchild.type === 'text' && vchild.value.trim() === '') continue;
+        if (vchild.type === 'text' && vchild.value !== '' && vchild.value.trim() === '') continue;
         children.push(vchild);
       }
     }
@@ -104,7 +104,7 @@ export function vdomToDom(vnode) {
  * DOM 속성 설정 (불리언 속성 포함)
  */
 export function setDomProp(el, key, value) {
-  const booleanAttrs = ['disabled', 'checked', 'readonly', 'selected', 'multiple', 'autofocus'];
+  const booleanAttrs = ['disabled', 'checked', 'readonly', 'selected', 'multiple', 'autofocus', 'hidden'];
   if (booleanAttrs.includes(key)) {
     if (value === false || value === 'false' || value === null || value === undefined) {
       el.removeAttribute(key);
@@ -118,6 +118,20 @@ export function setDomProp(el, key, value) {
   }
 }
 
+function cloneValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(cloneValue);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [key, cloneValue(nestedValue)])
+    );
+  }
+
+  return value;
+}
+
 /**
  * VDOM 깊은 복사
  */
@@ -127,7 +141,7 @@ export function cloneVdom(vnode) {
   return {
     type: 'element',
     tag: vnode.tag,
-    props: { ...vnode.props },
+    props: cloneValue(vnode.props || {}),
     key: vnode.key,
     children: (vnode.children || []).map(cloneVdom),
   };

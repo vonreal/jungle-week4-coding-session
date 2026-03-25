@@ -18,6 +18,7 @@ const INITIAL_HTML = `<div id="app">
 
 // 전역 상태
 let currentVdom = null;
+let htmlSnapshots = [];
 const history = new History();
 
 // DOM 참조
@@ -36,20 +37,23 @@ export function init() {
   vdomTree = document.getElementById('vdom-tree');
   historyInfo = document.getElementById('history-info');
 
+  const initialHtml = INITIAL_HTML.trim();
+
   // 초기 렌더링
   const parser = new DOMParser();
-  const doc = parser.parseFromString(INITIAL_HTML, 'text/html');
+  const doc = parser.parseFromString(initialHtml, 'text/html');
   const appEl = doc.body.firstElementChild;
 
   currentVdom = domToVdom(appEl);
   history.push(currentVdom);
+  htmlSnapshots = [initialHtml];
 
   // 실제 영역 렌더링
   realArea.innerHTML = '';
   realArea.appendChild(vdomToDom(currentVdom));
 
   // 테스트 영역: HTML 소스 코드로 편집
-  testArea.value = INITIAL_HTML.trim();
+  testArea.value = initialHtml;
 
   // 버튼 이벤트
   patchBtn.addEventListener('click', onPatch);
@@ -89,6 +93,9 @@ function onPatch() {
   const prevVdom = cloneVdom(currentVdom);
   currentVdom = newVdom;
   history.push(currentVdom);
+  htmlSnapshots = htmlSnapshots.slice(0, history.cursor);
+  htmlSnapshots.push(htmlSource);
+  testArea.value = htmlSource;
 
   // UI 갱신
   updateUI();
@@ -108,7 +115,7 @@ function onUndo() {
 
   const patches = diff(oldVdom, currentVdom);
   applyPatches(realArea.firstElementChild || realArea, patches);
-  testArea.value = vdomToHtml(currentVdom);
+  testArea.value = htmlSnapshots[history.cursor] ?? '';
 
   updateUI();
   setDiffLog(patches);
@@ -127,7 +134,7 @@ function onRedo() {
 
   const patches = diff(oldVdom, currentVdom);
   applyPatches(realArea.firstElementChild || realArea, patches);
-  testArea.value = vdomToHtml(currentVdom);
+  testArea.value = htmlSnapshots[history.cursor] ?? '';
 
   updateUI();
   setDiffLog(patches);
@@ -244,30 +251,6 @@ function renderTreeNode(vnode, path, changedPaths) {
     </div>
     ${hasChildren ? `<div class="tree-children">${children}</div>` : ''}
   </div>`;
-}
-
-/**
- * VDOM → HTML 소스 문자열 변환 (테스트 영역 동기화용)
- */
-function vdomToHtml(vnode, indent = 0) {
-  if (!vnode) return '';
-  const pad = '  '.repeat(indent);
-
-  if (vnode.type === 'text') return pad + vnode.value;
-
-  const propsStr = Object.entries(vnode.props || {})
-    .map(([k, v]) => ` ${k}="${v}"`)
-    .join('');
-
-  if (!vnode.children || vnode.children.length === 0) {
-    return `${pad}<${vnode.tag}${propsStr}></${vnode.tag}>`;
-  }
-
-  const childrenHtml = vnode.children
-    .map(c => vdomToHtml(c, indent + 1))
-    .join('\n');
-
-  return `${pad}<${vnode.tag}${propsStr}>\n${childrenHtml}\n${pad}</${vnode.tag}>`;
 }
 
 /**
