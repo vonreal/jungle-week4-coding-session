@@ -58,7 +58,7 @@ export function domToVdom(node) {
       const vchild = domToVdom(child);
       if (vchild !== null) {
         // 순수 공백 텍스트 노드는 제외
-        if (vchild.type === 'text' && vchild.value.trim() === '') continue;
+        if (vchild.type === 'text' && vchild.value !== '' && vchild.value.trim() === '') continue;
         children.push(vchild);
       }
     }
