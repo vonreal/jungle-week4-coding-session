@@ -7,22 +7,22 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
-      --border: #2e3352; --accent: #6c63ff; --accent2: #00d4aa;
-      --danger: #ff5c5c; --text: #e0e4f5; --text-muted: #7b82a8;
+      --bg: #f6f8fb; --surface: #ffffff; --surface2: #eef3ff;
+      --border: #d6deea; --accent: #2952cc; --accent2: #0f9d7a;
+      --danger: #d14343; --text: #1f2937; --text-muted: #6b7280;
       --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
     }
     body { background: var(--bg); color: var(--text); font-family: 'Pretendard', system-ui, sans-serif; padding: 24px; }
     h1 { font-size: 22px; font-weight: 700; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 8px; }
     .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 28px; }
     .summary { padding: 16px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; }
-    .all-pass { background: rgba(0,212,170,0.12); border: 1px solid rgba(0,212,170,0.3); color: var(--accent2); }
-    .has-fail { background: rgba(255,92,92,0.12); border: 1px solid rgba(255,92,92,0.3); color: var(--danger); }
+    .all-pass { background: rgba(15,157,122,0.1); border: 1px solid rgba(15,157,122,0.25); color: var(--accent2); }
+    .has-fail { background: rgba(209,67,67,0.1); border: 1px solid rgba(209,67,67,0.25); color: var(--danger); }
     .fail-count { font-size: 13px; font-weight: 400; color: var(--danger); }
     .result-list { display: flex; flex-direction: column; gap: 6px; }
-    .result-item { display: flex; align-items: baseline; gap: 10px; padding: 9px 14px; border-radius: 7px; font-size: 13px; font-family: var(--font-mono); }
+    .result-item { display: flex; align-items: baseline; gap: 10px; padding: 9px 14px; border-radius: 7px; font-size: 13px; font-family: var(--font-mono); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(15,23,42,0.04); }
     .result-item.pass { background: var(--surface); border-left: 3px solid var(--accent2); }
-    .result-item.fail { background: rgba(255,92,92,0.08); border-left: 3px solid var(--danger); }
+    .result-item.fail { background: #fff5f5; border-left: 3px solid var(--danger); }
     .result-icon { font-size: 14px; }
     .result-msg { flex: 1; }
     .result-error { color: var(--danger); font-size: 11px; }
@@ -113,6 +113,23 @@ describe('Props 변경 (UPDATE_PROP / REMOVE_PROP)', () => {
     const patches = diff(el('div', { id: 'a', class: 'b' }), el('div', { id: 'a', class: 'b' }));
     assert(patches.length === 0, '패치 없음');
   });
+
+  it('여러 prop이 동시에 추가/변경/삭제되어도 각각 패치된다', () => {
+    const patches = diff(
+      el('div', { id: 'old', class: 'legacy', title: 'bye' }),
+      el('div', { id: 'new', hidden: 'true', class: 'legacy' })
+    );
+
+    assert(patches.length === 3, '패치 3개');
+    assert(patches.some(p => p.type === 'UPDATE_PROP' && p.key === 'id' && p.oldValue === 'old' && p.value === 'new'), 'id 변경');
+    assert(patches.some(p => p.type === 'UPDATE_PROP' && p.key === 'hidden' && p.oldValue === undefined && p.value === 'true'), 'hidden 추가');
+    assert(patches.some(p => p.type === 'REMOVE_PROP' && p.key === 'title' && p.oldValue === 'bye'), 'title 제거');
+  });
+
+  it('빈 props끼리 비교하면 패치 없음', () => {
+    const patches = diff(el('div', {}), el('div', {}));
+    assert(patches.length === 0, '빈 props끼리 비교 시 패치 없음');
+  });
 });
 
 // ──────────────────────────────────────────────
@@ -127,6 +144,21 @@ describe('노드 추가 (ADD)', () => {
     assertPatchPath(patch, [1], '자식 추가');
     assertEqual(patch.newNode, el('li', {}, [txt('B')]), '추가된 노드 정보');
   });
+
+  it('자식 여러 개가 동시에 추가되면 각 위치의 ADD 패치가 생성된다', () => {
+    const oldV = el('ul', {}, [el('li', {}, [txt('A')])]);
+    const newV = el('ul', {}, [
+      el('li', {}, [txt('A')]),
+      el('li', {}, [txt('B')]),
+      el('li', {}, [txt('C')]),
+    ]);
+    const patches = diff(oldV, newV);
+    const addPatches = byType(patches, 'ADD');
+
+    assert(addPatches.length === 2, 'ADD 패치 2개');
+    assert(addPatches.some(p => p.path.join(',') === '1'), 'path [1] 추가');
+    assert(addPatches.some(p => p.path.join(',') === '2'), 'path [2] 추가');
+  });
 });
 
 // ──────────────────────────────────────────────
@@ -139,6 +171,23 @@ describe('노드 제거 (REMOVE)', () => {
     const patches = diff(oldV, newV);
     const patch = assertSinglePatch(patches, 'REMOVE', '자식 제거');
     assertPatchPath(patch, [1], '자식 제거');
+  });
+
+  it('자식 여러 개가 동시에 삭제되면 각 위치의 REMOVE 패치가 생성된다', () => {
+    const oldV = el('ul', {}, [
+      el('li', {}, [txt('A')]),
+      el('li', {}, [txt('B')]),
+      el('li', {}, [txt('C')]),
+    ]);
+    const newV = el('ul', {}, [
+      el('li', {}, [txt('A')]),
+    ]);
+    const patches = diff(oldV, newV);
+    const removePatches = byType(patches, 'REMOVE');
+
+    assert(removePatches.length === 2, 'REMOVE 패치 2개');
+    assert(removePatches.some(p => p.path.join(',') === '1'), 'path [1] 제거');
+    assert(removePatches.some(p => p.path.join(',') === '2'), 'path [2] 제거');
   });
 });
 
@@ -160,6 +209,14 @@ describe('노드 교체 (REPLACE)', () => {
     assertPatchPath(patch, [], 'text→element 변경');
     assert(patch.oldNode.type === 'text', '이전 타입 text');
     assert(patch.newNode.type === 'element', '새 타입 element');
+  });
+
+  it('타입 다름 (element → text) → REPLACE', () => {
+    const patches = diff(el('span', {}, [txt('hi')]), txt('hi'));
+    const patch = assertSinglePatch(patches, 'REPLACE', 'element→text 변경');
+    assertPatchPath(patch, [], 'element→text 변경');
+    assert(patch.oldNode.type === 'element', '이전 타입 element');
+    assert(patch.newNode.type === 'text', '새 타입 text');
   });
 });
 
@@ -277,6 +334,11 @@ describe('엣지 케이스', () => {
     const patches = diff(el('div'), null);
     const patch = assertSinglePatch(patches, 'REMOVE', 'node→null');
     assertPatchPath(patch, [], 'node→null');
+  });
+
+  it('null → null: 패치 없음', () => {
+    const patches = diff(null, null);
+    assert(patches.length === 0, 'null↔null 패치 없음');
   });
 
   it('동일 트리 — 패치 없음', () => {
