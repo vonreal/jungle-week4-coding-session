@@ -45,6 +45,17 @@ function el(tag, props = {}, children = [], key = null) {
   return { type: 'element', tag, props, key: key ?? props['data-key'] ?? null, children };
 }
 function txt(value) { return { type: 'text', value }; }
+function byType(patches, type) {
+  return patches.filter((patch) => patch.type === type);
+}
+function assertSinglePatch(patches, type, message) {
+  const matches = byType(patches, type);
+  assert(matches.length === 1, `${message}: ${type} 패치 1개`);
+  return matches[0];
+}
+function assertPatchPath(patch, expectedPath, message) {
+  assertEqual(patch?.path, expectedPath, `${message}: path ${JSON.stringify(expectedPath)}`);
+}
 
 // ──────────────────────────────────────────────
 // 1. 텍스트 변경
@@ -54,10 +65,11 @@ describe('텍스트 변경 (UPDATE_TEXT)', () => {
     const oldV = el('p', {}, [txt('Hello')]);
     const newV = el('p', {}, [txt('World')]);
     const patches = diff(oldV, newV);
+    const patch = assertSinglePatch(patches, 'UPDATE_TEXT', '텍스트 변경');
     assert(patches.length === 1, '패치 1개');
-    assert(patches[0].type === 'UPDATE_TEXT', 'UPDATE_TEXT 타입');
-    assert(patches[0].value === 'World', '새 값 World');
-    assert(patches[0].oldValue === 'Hello', '이전 값 Hello');
+    assertPatchPath(patch, [0], '텍스트 변경');
+    assert(patch.value === 'World', '새 값 World');
+    assert(patch.oldValue === 'Hello', '이전 값 Hello');
   });
 
   it('텍스트가 동일하면 패치 없음', () => {
@@ -73,17 +85,28 @@ describe('텍스트 변경 (UPDATE_TEXT)', () => {
 describe('Props 변경 (UPDATE_PROP / REMOVE_PROP)', () => {
   it('prop 추가 시 UPDATE_PROP', () => {
     const patches = diff(el('div', {}), el('div', { class: 'new' }));
-    assert(patches.some(p => p.type === 'UPDATE_PROP' && p.key === 'class' && p.value === 'new'), 'class 추가');
+    const patch = assertSinglePatch(patches, 'UPDATE_PROP', 'prop 추가');
+    assertPatchPath(patch, [], 'prop 추가');
+    assert(patch.key === 'class', 'class 추가');
+    assert(patch.value === 'new', '새 class 값');
+    assert(patch.oldValue === undefined, '이전 class 값 없음');
   });
 
   it('prop 값 변경 시 UPDATE_PROP', () => {
     const patches = diff(el('div', { class: 'old' }), el('div', { class: 'new' }));
-    assert(patches.some(p => p.type === 'UPDATE_PROP' && p.key === 'class' && p.value === 'new' && p.oldValue === 'old'), 'class 변경');
+    const patch = assertSinglePatch(patches, 'UPDATE_PROP', 'prop 변경');
+    assertPatchPath(patch, [], 'prop 변경');
+    assert(patch.key === 'class', 'class 변경 key');
+    assert(patch.value === 'new', '새 class 값');
+    assert(patch.oldValue === 'old', '이전 class 값');
   });
 
   it('prop 제거 시 REMOVE_PROP', () => {
     const patches = diff(el('div', { class: 'x' }), el('div', {}));
-    assert(patches.some(p => p.type === 'REMOVE_PROP' && p.key === 'class'), 'class 제거');
+    const patch = assertSinglePatch(patches, 'REMOVE_PROP', 'prop 제거');
+    assertPatchPath(patch, [], 'prop 제거');
+    assert(patch.key === 'class', 'class 제거');
+    assert(patch.oldValue === 'x', '제거된 값 유지');
   });
 
   it('props 동일하면 패치 없음', () => {
@@ -100,7 +123,9 @@ describe('노드 추가 (ADD)', () => {
     const oldV = el('ul', {}, [el('li', {}, [txt('A')])]);
     const newV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])]);
     const patches = diff(oldV, newV);
-    assert(patches.some(p => p.type === 'ADD'), 'ADD 패치 존재');
+    const patch = assertSinglePatch(patches, 'ADD', '자식 추가');
+    assertPatchPath(patch, [1], '자식 추가');
+    assertEqual(patch.newNode, el('li', {}, [txt('B')]), '추가된 노드 정보');
   });
 });
 
@@ -112,7 +137,8 @@ describe('노드 제거 (REMOVE)', () => {
     const oldV = el('ul', {}, [el('li', {}, [txt('A')]), el('li', {}, [txt('B')])]);
     const newV = el('ul', {}, [el('li', {}, [txt('A')])]);
     const patches = diff(oldV, newV);
-    assert(patches.some(p => p.type === 'REMOVE'), 'REMOVE 패치 존재');
+    const patch = assertSinglePatch(patches, 'REMOVE', '자식 제거');
+    assertPatchPath(patch, [1], '자식 제거');
   });
 });
 
@@ -122,12 +148,18 @@ describe('노드 제거 (REMOVE)', () => {
 describe('노드 교체 (REPLACE)', () => {
   it('태그가 다르면 REPLACE', () => {
     const patches = diff(el('p', {}, [txt('Hi')]), el('span', {}, [txt('Hi')]));
-    assert(patches.some(p => p.type === 'REPLACE'), 'REPLACE 패치 존재');
+    const patch = assertSinglePatch(patches, 'REPLACE', '태그 변경');
+    assertPatchPath(patch, [], '태그 변경');
+    assert(patch.oldNode.tag === 'p', '이전 태그 p');
+    assert(patch.newNode.tag === 'span', '새 태그 span');
   });
 
   it('타입 다름 (text → element) → REPLACE', () => {
     const patches = diff(txt('hi'), el('span', {}, [txt('hi')]));
-    assert(patches.some(p => p.type === 'REPLACE'), 'text→element REPLACE');
+    const patch = assertSinglePatch(patches, 'REPLACE', 'text→element 변경');
+    assertPatchPath(patch, [], 'text→element 변경');
+    assert(patch.oldNode.type === 'text', '이전 타입 text');
+    assert(patch.newNode.type === 'element', '새 타입 element');
   });
 });
 
@@ -145,8 +177,8 @@ describe('Key 기반 매칭', () => {
       el('li', { 'data-key': 'a' }, [txt('A')]),
     ]);
     const patches = diff(oldV, newV);
-    // 순서가 바뀌었으므로 패치가 생성됨 (key 기반이므로 내용 자체는 동일하면 0일 수도 있음)
     assert(Array.isArray(patches), '패치 배열 반환');
+    assert(patches.length === 0, '동일 key/내용 순서 변경만으로는 패치 없음');
   });
 
   it('키 있는 리스트 중간 삽입', () => {
@@ -160,7 +192,9 @@ describe('Key 기반 매칭', () => {
       el('li', { 'data-key': 'c' }, [txt('C')]),
     ]);
     const patches = diff(oldV, newV);
-    assert(patches.some(p => p.type === 'ADD'), '중간 삽입 ADD 패치');
+    const patch = assertSinglePatch(patches, 'ADD', 'key 중간 삽입');
+    assertPatchPath(patch, [1], 'key 중간 삽입');
+    assert(patch.newNode.key === 'b', '추가된 key b');
   });
 
   it('키 있는 리스트 항목 제거', () => {
@@ -174,7 +208,42 @@ describe('Key 기반 매칭', () => {
       el('li', { 'data-key': 'c' }, [txt('C')]),
     ]);
     const patches = diff(oldV, newV);
-    assert(patches.some(p => p.type === 'REMOVE'), 'REMOVE 패치 생성');
+    const patch = assertSinglePatch(patches, 'REMOVE', 'key 항목 제거');
+    assertPatchPath(patch, [1], 'key 항목 제거');
+  });
+
+  it('같은 key 노드 내부 텍스트 변경만 추적', () => {
+    const oldV = el('ul', {}, [
+      el('li', { 'data-key': 'a' }, [txt('A')]),
+      el('li', { 'data-key': 'b' }, [txt('B')]),
+    ]);
+    const newV = el('ul', {}, [
+      el('li', { 'data-key': 'b' }, [txt('B updated')]),
+      el('li', { 'data-key': 'a' }, [txt('A')]),
+    ]);
+    const patches = diff(oldV, newV);
+    const patch = assertSinglePatch(patches, 'UPDATE_TEXT', 'key 재정렬 + 텍스트 변경');
+    assertPatchPath(patch, [0, 0], 'key 재정렬 + 텍스트 변경');
+    assert(patch.oldValue === 'B', '이전 텍스트 B');
+    assert(patch.value === 'B updated', '새 텍스트 B updated');
+  });
+
+  it('key 없는 노드는 순서대로 fallback 비교', () => {
+    const oldV = el('section', {}, [
+      el('p', {}, [txt('alpha')]),
+      el('div', { 'data-key': 'fixed' }, [txt('keep')]),
+    ]);
+    const newV = el('section', {}, [
+      el('p', {}, [txt('beta')]),
+      el('div', { 'data-key': 'fixed' }, [txt('keep')]),
+      el('p', {}, [txt('gamma')]),
+    ]);
+    const patches = diff(oldV, newV);
+    const textPatch = assertSinglePatch(patches, 'UPDATE_TEXT', 'unkeyed fallback 텍스트 변경');
+    const addPatch = assertSinglePatch(patches, 'ADD', 'unkeyed fallback 노드 추가');
+    assertPatchPath(textPatch, [0, 0], 'unkeyed fallback 텍스트 변경');
+    assertPatchPath(addPatch, [2], 'unkeyed fallback 노드 추가');
+    assertEqual(addPatch.newNode, el('p', {}, [txt('gamma')]), '추가된 unkeyed 노드');
   });
 });
 
@@ -184,12 +253,14 @@ describe('Key 기반 매칭', () => {
 describe('엣지 케이스', () => {
   it('null → node: ADD', () => {
     const patches = diff(null, el('div'));
-    assert(patches[0]?.type === 'ADD', 'null→node ADD');
+    const patch = assertSinglePatch(patches, 'ADD', 'null→node');
+    assertPatchPath(patch, [], 'null→node');
   });
 
   it('node → null: REMOVE', () => {
     const patches = diff(el('div'), null);
-    assert(patches[0]?.type === 'REMOVE', 'node→null REMOVE');
+    const patch = assertSinglePatch(patches, 'REMOVE', 'node→null');
+    assertPatchPath(patch, [], 'node→null');
   });
 
   it('동일 트리 — 패치 없음', () => {
@@ -202,7 +273,10 @@ describe('엣지 케이스', () => {
     const oldV = el('div', {}, [el('div', {}, [el('div', {}, [txt('deep')])])]);
     const newV = el('div', {}, [el('div', {}, [el('div', {}, [txt('changed')])])]);
     const patches = diff(oldV, newV);
-    assert(patches.some(p => p.type === 'UPDATE_TEXT'), '깊은 텍스트 변경');
+    const patch = assertSinglePatch(patches, 'UPDATE_TEXT', '깊은 텍스트 변경');
+    assertPatchPath(patch, [0, 0, 0], '깊은 텍스트 변경');
+    assert(patch.oldValue === 'deep', '이전 deep');
+    assert(patch.value === 'changed', '새 changed');
   });
 
   it('같은 태그, props만 다름', () => {
@@ -218,17 +292,40 @@ describe('엣지 케이스', () => {
     const oldV = el('div', { id: 'a' }, [txt('old text'), el('span', { class: 'x' })]);
     const newV = el('div', { id: 'b' }, [txt('new text'), el('span', { class: 'y' })]);
     const patches = diff(oldV, newV);
-    assert(patches.length >= 3, '3개 이상 패치');
+    assert(patches.length === 3, '정확히 3개 패치');
+    assert(byType(patches, 'UPDATE_PROP').length === 2, 'prop 변경 2개');
+    assert(byType(patches, 'UPDATE_TEXT').length === 1, 'text 변경 1개');
   });
 
   it('빈 트리 vs 자식 있는 트리', () => {
     const patches = diff(el('ul', {}, []), el('ul', {}, [el('li', {}, [txt('item')])]));
-    assert(patches.some(p => p.type === 'ADD'), 'ADD 패치');
+    const patch = assertSinglePatch(patches, 'ADD', '빈 트리 → 자식 있음');
+    assertPatchPath(patch, [0], '빈 트리 → 자식 있음');
   });
 
   it('자식 있는 트리 vs 빈 트리', () => {
     const patches = diff(el('ul', {}, [el('li', {}, [txt('item')])]), el('ul', {}, []));
-    assert(patches.some(p => p.type === 'REMOVE'), 'REMOVE 패치');
+    const patch = assertSinglePatch(patches, 'REMOVE', '자식 있음 → 빈 트리');
+    assertPatchPath(patch, [0], '자식 있음 → 빈 트리');
+  });
+
+  it('자식 중간 element → text 교체', () => {
+    const oldV = el('div', {}, [el('strong', {}, [txt('bold')])]);
+    const newV = el('div', {}, [txt('plain')]);
+    const patches = diff(oldV, newV);
+    const patch = assertSinglePatch(patches, 'REPLACE', '중간 element → text 교체');
+    assertPatchPath(patch, [0], '중간 element → text 교체');
+    assert(patch.oldNode.type === 'element', '이전 노드 element');
+    assert(patch.newNode.type === 'text', '새 노드 text');
+  });
+
+  it('중첩 요소의 prop 제거 path 추적', () => {
+    const oldV = el('section', {}, [el('button', { disabled: '' }, [txt('save')])]);
+    const newV = el('section', {}, [el('button', {}, [txt('save')])]);
+    const patches = diff(oldV, newV);
+    const patch = assertSinglePatch(patches, 'REMOVE_PROP', '중첩 prop 제거');
+    assertPatchPath(patch, [0], '중첩 prop 제거');
+    assert(patch.key === 'disabled', 'disabled 제거');
   });
 });
 
