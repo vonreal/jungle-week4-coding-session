@@ -33,6 +33,16 @@
     .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--surface2); }
     .panel-head h2 { font-size: 15px; font-weight: 700; }
     .panel-head p { color: var(--text-muted); font-size: 12px; margin-top: 3px; }
+    .run-button {
+      border: none; border-radius: 999px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      color: #fff; padding: 10px 18px; font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: transform 160ms, opacity 160ms;
+      box-shadow: 0 6px 20px rgba(91,82,232,0.25);
+      white-space: nowrap;
+    }
+    .run-button:hover { transform: translateY(-1px); }
+    .run-button:disabled { opacity: 0.55; cursor: wait; transform: none; }
 
     /* ── 테스트 결과 ── */
     #test-results { padding: 16px; }
@@ -77,8 +87,9 @@
       <div class="panel-head">
         <div>
           <h2>테스트 결과</h2>
-          <p>페이지 로드 시 자동으로 실행됩니다.</p>
+          <p>실행 버튼을 누르면 전체 테스트를 다시 돌립니다.</p>
         </div>
+        <button id="run-tests" class="run-button" type="button">다시 실행</button>
       </div>
       <div id="test-results">테스트 실행 중...</div>
     </div>
@@ -116,6 +127,7 @@ import { diff } from '../src/diff.js';
 
 let passCount = 0, failCount = 0;
 const groups = [], itQueue = [];
+const runButton = document.getElementById('run-tests');
 let _currentGroup = null;
 
 function describe(name, fn) {
@@ -515,24 +527,40 @@ describe('엣지 케이스', () => {
   });
 });
 
-;(async () => {
+async function runTests() {
+  passCount = 0;
+  failCount = 0;
+  for (const group of groups) group.items = [];
   const currentTestEl = document.getElementById('current-test');
-  for (const item of itQueue) {
-    if (currentTestEl) currentTestEl.textContent = item.name;
-    await new Promise(r => setTimeout(r, 0));
-    try {
-      await item.fn();
-      item.group.items.push({ pass: true, message: item.name });
-      passCount++;
-    } catch(e) {
-      item.group.items.push({ pass: false, message: item.name, error: e.message });
-      failCount++;
+  if (currentTestEl) currentTestEl.textContent = '테스트 실행 중...';
+  if (runButton) runButton.disabled = true;
+
+  try {
+    for (const item of itQueue) {
+      if (currentTestEl) currentTestEl.textContent = item.name;
+      await new Promise(r => setTimeout(r, 0));
+      try {
+        await item.fn();
+        item.group.items.push({ pass: true, message: item.name });
+        passCount++;
+      } catch(e) {
+        item.group.items.push({ pass: false, message: item.name, error: e.message });
+        failCount++;
+      }
+      await new Promise(r => setTimeout(r, 80));
     }
-    await new Promise(r => setTimeout(r, 80));
+  } finally {
+    if (currentTestEl) currentTestEl.textContent = `✅ 완료 (${passCount}/${passCount + failCount})`;
+    renderResults();
+    if (runButton) runButton.disabled = false;
   }
-  if (currentTestEl) currentTestEl.textContent = `✅ 완료 (${passCount}/${passCount + failCount})`;
-  renderResults();
-})();
+}
+
+runButton?.addEventListener('click', () => {
+  runTests();
+});
+
+runTests();
 </script>
 </body>
 </html>
