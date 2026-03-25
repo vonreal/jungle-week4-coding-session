@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>History Module Tests</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+      --border: #2e3352; --accent: #1aa179; --accent2: #f3b33d;
+      --danger: #ff5c5c; --text: #e0e4f5; --text-muted: #7b82a8;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'Pretendard', system-ui, sans-serif; padding: 24px; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; color: var(--accent2); }
+    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 28px; }
+    .summary { padding: 16px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; }
+    .all-pass { background: rgba(26,161,121,0.12); border: 1px solid rgba(26,161,121,0.3); color: var(--accent); }
+    .has-fail { background: rgba(255,92,92,0.12); border: 1px solid rgba(255,92,92,0.3); color: var(--danger); }
+    .fail-count { font-size: 13px; font-weight: 400; color: var(--danger); }
+    .result-list { display: flex; flex-direction: column; gap: 6px; }
+    .result-item { display: flex; align-items: baseline; gap: 10px; padding: 9px 14px; border-radius: 7px; font-size: 13px; font-family: var(--font-mono); }
+    .result-item.pass { background: var(--surface); border-left: 3px solid var(--accent); }
+    .result-item.fail { background: rgba(255,92,92,0.08); border-left: 3px solid var(--danger); }
+    .result-icon { font-size: 14px; }
+    .result-msg { flex: 1; }
+    .result-error { color: var(--danger); font-size: 11px; }
+    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent2); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
+    a.back:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <a class="back" href="../index.html">메인으로 돌아가기</a>
+  <h1>History 모듈 테스트</h1>
+  <p class="subtitle">undo/redo 스택, 커서 이동, 복제 보존 여부를 검증합니다.</p>
+  <div id="test-results">테스트 실행 중...</div>
+
+  <script type="module">
+    import { History } from '../src/history.js';
+    import { describe, it, assert, assertEqual, renderResults } from './test-runner.js';
+
+    function el(tag, props = {}, children = [], key = null) {
+      return { type: 'element', tag, props, key: key ?? props['data-key'] ?? null, children };
+    }
+
+    function txt(value) {
+      return { type: 'text', value: String(value) };
+    }
+
+    describe('초기 상태', () => {
+      it('생성 직후 비어 있는 히스토리를 가진다', () => {
+        const history = new History();
+        assert(history.size === 0, 'size는 0이다');
+        assert(history.cursor === -1, 'cursor는 -1이다');
+        assert(history.current() === null, 'current()는 null이다');
+        assert(history.canUndo() === false, 'undo 불가');
+        assert(history.canRedo() === false, 'redo 불가');
+      });
+    });
+
+    describe('push / current', () => {
+      it('push 시 상태가 추가되고 current가 마지막 상태를 반환한다', () => {
+        const history = new History();
+        const state = el('div', { id: 'root' }, [txt('A')]);
+
+        history.push(state);
+
+        assert(history.size === 1, 'size가 1이 된다');
+        assert(history.cursor === 0, 'cursor가 마지막 인덱스를 가리킨다');
+        assertEqual(history.current(), state, 'current()가 push한 상태와 같다');
+      });
+
+      it('push에 전달한 원본 객체를 수정해도 내부 히스토리는 보존된다', () => {
+        const history = new History();
+        const state = el('div', { id: 'root' }, [txt('A')]);
+
+        history.push(state);
+        state.props.id = 'mutated';
+        state.children[0].value = 'changed';
+
+        assertEqual(history.current(), el('div', { id: 'root' }, [txt('A')]), '내부 저장본은 원본 변경에 영향받지 않는다');
+      });
+
+      it('current()가 반환한 복제본을 수정해도 내부 히스토리는 바뀌지 않는다', () => {
+        const history = new History();
+        history.push(el('ul', {}, [el('li', { 'data-key': 'a' }, [txt('Milk')])]));
+
+        const current = history.current();
+        current.children[0].children[0].value = 'Eggs';
+
+        assert(history.current().children[0].children[0].value === 'Milk', '반환값 수정이 내부 상태를 오염시키지 않는다');
+      });
+
+      it('null 상태도 히스토리에 저장할 수 있다', () => {
+        const history = new History();
+
+        history.push(null);
+
+        assert(history.size === 1, 'null도 하나의 상태로 저장된다');
+        assert(history.cursor === 0, 'cursor가 첫 상태를 가리킨다');
+        assert(history.current() === null, 'current()는 null을 반환한다');
+      });
+    });
+
+    describe('undo / redo', () => {
+      it('undo는 이전 상태로 이동한다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+
+        history.push(a);
+        history.push(b);
+
+        const prev = history.undo();
+
+        assertEqual(prev, a, 'undo 결과는 이전 상태다');
+        assert(history.cursor === 0, 'cursor가 감소한다');
+        assert(history.canUndo() === false, '더 이상 undo할 수 없다');
+        assert(history.canRedo() === true, 'redo는 가능하다');
+      });
+
+      it('redo는 다음 상태로 이동한다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+
+        history.push(a);
+        history.push(b);
+        history.undo();
+
+        const next = history.redo();
+
+        assertEqual(next, b, 'redo 결과는 다음 상태다');
+        assert(history.cursor === 1, 'cursor가 증가한다');
+        assert(history.canUndo() === true, 'undo 가능하다');
+        assert(history.canRedo() === false, '더 이상 redo할 수 없다');
+      });
+
+      it('undo 불가능한 상태에서는 null을 반환한다', () => {
+        const history = new History();
+        history.push(el('div'));
+
+        assert(history.undo() === null, 'undo 불가능 시 null');
+      });
+
+      it('redo 불가능한 상태에서는 null을 반환한다', () => {
+        const history = new History();
+        history.push(el('div'));
+
+        assert(history.redo() === null, 'redo 불가능 시 null');
+      });
+    });
+
+    describe('redo stack 정리', () => {
+      it('undo 후 새로운 push를 하면 이후 redo 이력이 삭제된다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+        const c = el('p', {}, [txt('C')]);
+
+        history.push(a);
+        history.push(b);
+        history.undo();
+        history.push(c);
+
+        assert(history.size === 2, '미래 이력이 잘리고 size가 2가 된다');
+        assert(history.cursor === 1, 'cursor는 새 마지막 상태를 가리킨다');
+        assert(history.canRedo() === false, 'redo 이력이 사라진다');
+        assertEqual(history.current(), c, '현재 상태는 새로 push한 상태다');
+      });
+
+      it('redo 이력 삭제 후 실제 redo() 호출이 막히고 상태가 변하지 않는다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+        const c = el('p', {}, [txt('C')]);
+
+        history.push(a);
+        history.push(b);
+        history.undo();
+        history.push(c);
+
+        assert(history.redo() === null, 'redo 호출 시 null을 반환한다');
+        assert(history.cursor === 1, 'cursor가 변하지 않는다');
+        assert(history.size === 2, 'size가 변하지 않는다');
+        assertEqual(history.current(), c, 'current()가 변하지 않는다');
+      });
+    });
+
+    describe('빈 히스토리에서의 API 안정성', () => {
+      it('push 없이 undo() 호출 시 null을 반환하고 상태가 변하지 않는다', () => {
+        const history = new History();
+
+        assert(history.undo() === null, 'undo()는 null을 반환한다');
+        assert(history.cursor === -1, 'cursor가 -1을 유지한다');
+        assert(history.size === 0, 'size가 0을 유지한다');
+        assert(history.current() === null, 'current()가 null을 유지한다');
+      });
+
+      it('push 없이 redo() 호출 시 null을 반환하고 상태가 변하지 않는다', () => {
+        const history = new History();
+
+        assert(history.redo() === null, 'redo()는 null을 반환한다');
+        assert(history.cursor === -1, 'cursor가 -1을 유지한다');
+        assert(history.size === 0, 'size가 0을 유지한다');
+        assert(history.current() === null, 'current()가 null을 유지한다');
+      });
+    });
+
+    describe('undo / redo 실패 시 상태 불변성', () => {
+      it('첫 번째 상태에서 undo() 실패 후 cursor / size / current()가 변하지 않는다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        history.push(a);
+
+        history.undo();
+
+        assert(history.cursor === 0, 'cursor가 0을 유지한다');
+        assert(history.size === 1, 'size가 1을 유지한다');
+        assertEqual(history.current(), a, 'current()가 변하지 않는다');
+      });
+
+      it('마지막 상태에서 redo() 실패 후 cursor / size / current()가 변하지 않는다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+        history.push(a);
+        history.push(b);
+
+        history.redo();
+
+        assert(history.cursor === 1, 'cursor가 1을 유지한다');
+        assert(history.size === 2, 'size가 2를 유지한다');
+        assertEqual(history.current(), b, 'current()가 변하지 않는다');
+      });
+    });
+
+    describe('연속 다단계 undo / redo', () => {
+      it('3개 상태에서 undo를 끝까지 수행하면 첫 상태에 도달한다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+        const c = el('p', {}, [txt('C')]);
+
+        history.push(a);
+        history.push(b);
+        history.push(c);
+
+        const step1 = history.undo();
+        const step2 = history.undo();
+
+        assertEqual(step1, b, '첫 번째 undo는 B를 반환한다');
+        assertEqual(step2, a, '두 번째 undo는 A를 반환한다');
+        assert(history.cursor === 0, 'cursor가 0이다');
+        assert(history.canUndo() === false, '더 이상 undo할 수 없다');
+        assert(history.canRedo() === true, 'redo는 가능하다');
+      });
+
+      it('undo를 끝까지 수행한 후 redo를 끝까지 수행하면 마지막 상태로 돌아온다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+        const c = el('p', {}, [txt('C')]);
+
+        history.push(a);
+        history.push(b);
+        history.push(c);
+        history.undo();
+        history.undo();
+
+        const step1 = history.redo();
+        const step2 = history.redo();
+
+        assertEqual(step1, b, '첫 번째 redo는 B를 반환한다');
+        assertEqual(step2, c, '두 번째 redo는 C를 반환한다');
+        assert(history.cursor === 2, 'cursor가 2이다');
+        assert(history.canRedo() === false, '더 이상 redo할 수 없다');
+        assertEqual(history.current(), c, 'current()는 C다');
+      });
+    });
+
+    describe('다단계 undo 후 push — 미래 이력 전체 삭제', () => {
+      it('여러 번 undo 후 push하면 커서 이후 이력이 전부 삭제된다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+        const c = el('p', {}, [txt('C')]);
+        const d = el('p', {}, [txt('D')]);
+
+        history.push(a);
+        history.push(b);
+        history.push(c);
+        history.undo();
+        history.undo(); // cursor === 0
+
+        history.push(d);
+
+        assert(history.size === 2, 'B, C 이력이 전부 삭제되고 size가 2가 된다');
+        assert(history.cursor === 1, 'cursor가 새 마지막 상태를 가리킨다');
+        assert(history.canRedo() === false, 'redo 이력이 없다');
+        assertEqual(history.current(), d, '현재 상태는 D다');
+      });
+    });
+
+    describe('undo / redo 후 size 불변', () => {
+      it('undo / redo는 size를 변경하지 않는다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+        const c = el('p', {}, [txt('C')]);
+
+        history.push(a);
+        history.push(b);
+        history.push(c);
+        assert(history.size === 3, 'push 후 size는 3이다');
+
+        history.undo();
+        assert(history.size === 3, 'undo 후에도 size는 3이다');
+
+        history.redo();
+        assert(history.size === 3, 'redo 후에도 size는 3이다');
+      });
+    });
+
+    describe('undo / redo 반환값 복제 보장', () => {
+      it('undo() 반환값을 수정해도 내부 히스토리가 오염되지 않는다', () => {
+        const history = new History();
+        const a = el('p', { id: 'a' }, [txt('A')]);
+        const b = el('p', { id: 'b' }, [txt('B')]);
+
+        history.push(a);
+        history.push(b);
+
+        const result = history.undo();
+        result.props.id = 'mutated';
+
+        history.redo();
+        assertEqual(history.undo(), a, 'undo() 반환값 수정이 내부 스택을 오염시키지 않는다');
+      });
+
+      it('redo() 반환값을 수정해도 내부 히스토리가 오염되지 않는다', () => {
+        const history = new History();
+        const a = el('p', { id: 'a' }, [txt('A')]);
+        const b = el('p', { id: 'b' }, [txt('B')]);
+
+        history.push(a);
+        history.push(b);
+        history.undo();
+
+        const result = history.redo();
+        result.props.id = 'mutated';
+
+        assertEqual(history.current(), b, 'redo() 반환값 수정이 내부 스택을 오염시키지 않는다');
+      });
+    });
+
+    describe('null 혼합 시나리오', () => {
+      it('null이 중간 상태로 섞인 undo/redo 흐름이 올바르게 동작한다', () => {
+        const history = new History();
+        const a = el('p', {}, [txt('A')]);
+        const b = el('p', {}, [txt('B')]);
+
+        history.push(a);
+        history.push(null);
+        history.push(b);
+
+        assert(history.size === 3, 'size가 3이다');
+
+        const step1 = history.undo();
+        assert(step1 === null, '첫 번째 undo는 null 상태를 반환한다');
+
+        const step2 = history.undo();
+        assertEqual(step2, a, '두 번째 undo는 A를 반환한다');
+
+        const step3 = history.redo();
+        assert(step3 === null, '첫 번째 redo는 null 상태를 반환한다');
+
+        const step4 = history.redo();
+        assertEqual(step4, b, '두 번째 redo는 B를 반환한다');
+      });
+    });
+
+    describe('push 정책 및 복제 보장', () => {
+      it('push 직후 canRedo()는 false다', () => {
+        const history = new History();
+        history.push(el('p', {}, [txt('A')]));
+        history.push(el('p', {}, [txt('B')]));
+
+        assert(history.canRedo() === false, '가장 최신 상태에서는 redo가 불가하다');
+      });
+
+      it('동일 객체를 연속 push해도 별개의 시점으로 저장된다', () => {
+        const history = new History();
+        const state = el('p', {}, [txt('A')]);
+
+        history.push(state);
+        history.push(state);
+
+        assert(history.size === 2, '동일 객체도 별개의 시점으로 저장되어 size가 2가 된다');
+      });
+
+      it('current()를 여러 번 호출하면 서로 독립된 복제본을 반환한다', () => {
+        const history = new History();
+        history.push(el('div', { id: 'original' }, []));
+
+        const snapshot1 = history.current();
+        const snapshot2 = history.current();
+
+        snapshot1.props.id = 'mutated';
+
+        assert(snapshot2.props.id === 'original', 'snapshot1 수정이 snapshot2에 영향을 주지 않는다');
+        assert(history.current().props.id === 'original', '내부 히스토리도 오염되지 않는다');
+      });
+
+      it('같은 객체를 수정하며 여러 번 push하면 각 시점의 스냅샷이 분리된다', () => {
+        const history = new History();
+        const state = el('div', { id: 'A' }, []);
+
+        history.push(state);
+        state.props.id = 'B';
+        history.push(state);
+
+        const prev = history.undo();
+        assert(prev.props.id === 'A', 'undo 결과는 첫 push 시점의 스냅샷 A다');
+      });
+    });
+
+    renderResults();
+  </script>
+</body>
+</html>
