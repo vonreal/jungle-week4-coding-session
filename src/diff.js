@@ -44,8 +44,19 @@ export function diff(oldNode, newNode, path = []) {
     return patches;
   }
 
-  patches.push(...diffProps(oldNode.props || {}, newNode.props || {}, path));
-  patches.push(...diffChildren(oldNode.children || [], newNode.children || [], path));
+  // keyed 자식 순서가 바뀌면 부모 전체를 교체해 실제 DOM과 VDOM을 다시 맞춘다.
+  if (hasKeyedReorder(oldNode.children || [], newNode.children || [])) {
+    patches.push({ type: 'REPLACE', path: [...path], newNode, oldNode });
+    return patches;
+  }
+
+  // Props 비교
+  const propPatches = diffProps(oldNode.props || {}, newNode.props || {}, path);
+  patches.push(...propPatches);
+
+  // 자식 노드 비교
+  const childPatches = diffChildren(oldNode.children || [], newNode.children || [], path);
+  patches.push(...childPatches);
 
   return patches;
 }
@@ -172,6 +183,37 @@ function cloneKeyBuckets(keyMap) {
   return cloned;
 }
 
+function hasKeyedReorder(oldChildren, newChildren) {
+  const oldKeys = oldChildren.map(getKey).filter(key => key !== null);
+  const newKeys = newChildren.map(getKey).filter(key => key !== null);
+
+  if (oldKeys.length === 0 && newKeys.length === 0) {
+    return false;
+  }
+
+  const oldKeySet = new Set(oldKeys);
+  const newKeySet = new Set(newKeys);
+
+  const oldCommonOrder = oldKeys.filter(key => newKeySet.has(key));
+  const newCommonOrder = newKeys.filter(key => oldKeySet.has(key));
+
+  if (oldCommonOrder.length !== newCommonOrder.length) {
+    return false;
+  }
+
+  for (let i = 0; i < oldCommonOrder.length; i++) {
+    if (oldCommonOrder[i] !== newCommonOrder[i]) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function isEqualPropValue(oldValue, newValue) {
   if (oldValue === newValue) return true;
 
@@ -190,10 +232,6 @@ function isEqualPropValue(oldValue, newValue) {
   }
 
   return false;
-}
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function getKey(vnode) {

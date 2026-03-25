@@ -72,26 +72,34 @@ export function init() {
  */
 function onPatch() {
   const htmlSource = testArea.value.trim();
-  if (!htmlSource) return;
+  let newVdom = null;
 
-  // 새 VDOM 생성
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(htmlSource, 'text/html');
-  const appEl = doc.body.firstElementChild;
-  if (!appEl) {
-    showAlert('유효한 HTML을 입력해주세요.');
-    return;
-  }
+  if (htmlSource) {
+    // 새 VDOM 생성
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlSource, 'text/html');
+    const appEl = doc.body.firstElementChild;
+    if (!appEl) {
+      showAlert('유효한 HTML을 입력해주세요.');
+      return;
+    }
 
-  const newVdom = domToVdom(appEl);
-  const duplicateKeyError = findDuplicateKeyError(newVdom);
-  if (duplicateKeyError) {
-    showAlert(duplicateKeyError);
-    return;
+    newVdom = domToVdom(appEl);
+    const duplicateKeyError = findDuplicateKeyError(newVdom);
+    if (duplicateKeyError) {
+      showAlert(duplicateKeyError);
+      return;
+    }
   }
 
   // Diff
   const patches = diff(currentVdom, newVdom);
+  if (patches.length === 0) {
+    testArea.value = htmlSource;
+    setDiffLog([]);
+    renderVdomTree(currentVdom, null);
+    return;
+  }
 
   // Patch 적용
   applyPatches(realArea.firstElementChild || realArea, patches);
