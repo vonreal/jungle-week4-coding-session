@@ -104,7 +104,7 @@ export function vdomToDom(vnode) {
  * DOM 속성 설정 (불리언 속성 포함)
  */
 export function setDomProp(el, key, value) {
-  const booleanAttrs = ['disabled', 'checked', 'readonly', 'selected', 'multiple', 'autofocus'];
+  const booleanAttrs = ['disabled', 'checked', 'readonly', 'selected', 'multiple', 'autofocus', 'hidden'];
   if (booleanAttrs.includes(key)) {
     if (value === false || value === 'false' || value === null || value === undefined) {
       el.removeAttribute(key);
