@@ -7,38 +7,121 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
-      --border: #2e3352; --accent: #1aa179; --accent2: #f3b33d;
-      --danger: #ff5c5c; --text: #e0e4f5; --text-muted: #7b82a8;
+      --bg: #f6f8fb; --surface: #ffffff; --surface2: #f0f2fa;
+      --border: #dde1ef; --accent: #5b52e8; --accent2: #00a884;
+      --danger: #e03c3c; --warn: #d97706; --text: #1a1d2e; --text-muted: #6b7394;
       --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --font-sans: 'Pretendard', system-ui, sans-serif;
     }
-    body { background: var(--bg); color: var(--text); font-family: 'Pretendard', system-ui, sans-serif; padding: 24px; }
-    h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; color: var(--accent2); }
-    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 28px; }
-    .summary { padding: 16px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; }
-    .all-pass { background: rgba(26,161,121,0.12); border: 1px solid rgba(26,161,121,0.3); color: var(--accent); }
-    .has-fail { background: rgba(255,92,92,0.12); border: 1px solid rgba(255,92,92,0.3); color: var(--danger); }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); padding: 24px 18px 56px; min-height: 100vh; }
+
+    .page { max-width: 1100px; margin: 0 auto; }
+
+    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent2); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
+    a.back:hover { text-decoration: underline; }
+
+    .hero { background: linear-gradient(135deg, rgba(91,82,232,0.07), rgba(0,168,132,0.05)); border: 1px solid rgba(91,82,232,0.18); border-radius: 20px; padding: 24px; margin-bottom: 24px; }
+    h1 { font-size: clamp(20px, 3vw, 32px); font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 6px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+
+    /* ── 레이아웃 ── */
+    .layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.8fr); gap: 20px; align-items: start; }
+    @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+    /* ── 패널 공통 ── */
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+    .panel-head h2 { font-size: 15px; font-weight: 700; }
+    .panel-head p { color: var(--text-muted); font-size: 12px; margin-top: 3px; }
+
+    /* ── 테스트 결과 ── */
+    #test-results { padding: 16px; }
+    .summary { padding: 14px 18px; border-radius: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 700; }
+    .all-pass { background: rgba(0,168,132,0.08); border: 1px solid rgba(0,168,132,0.25); color: var(--accent2); }
+    .has-fail { background: rgba(224,60,60,0.08); border: 1px solid rgba(224,60,60,0.25); color: var(--danger); }
     .fail-count { font-size: 13px; font-weight: 400; color: var(--danger); }
     .result-list { display: flex; flex-direction: column; gap: 6px; }
     .result-item { display: flex; align-items: baseline; gap: 10px; padding: 9px 14px; border-radius: 7px; font-size: 13px; font-family: var(--font-mono); }
-    .result-item.pass { background: var(--surface); border-left: 3px solid var(--accent); }
-    .result-item.fail { background: rgba(255,92,92,0.08); border-left: 3px solid var(--danger); }
+    .result-item.pass { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent2); }
+    .result-item.fail { background: #fff5f5; border: 1px solid #fde8e8; border-left: 3px solid var(--danger); }
     .result-icon { font-size: 14px; }
     .result-msg { flex: 1; }
     .result-error { color: var(--danger); font-size: 11px; }
-    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent2); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
-    a.back:hover { text-decoration: underline; }
+
+    /* ── 미리보기 패널 ── */
+    .preview { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .preview-card { border: 1px dashed rgba(91,82,232,0.25); border-radius: 12px; padding: 12px; background: rgba(91,82,232,0.02); }
+    .preview-card h3 { font-size: 12px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
+    .preview-card p { color: var(--text-muted); font-size: 12px; line-height: 1.6; margin-bottom: 8px; }
+    .fixture { min-height: 72px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); padding: 10px 12px; font-size: 12px; font-family: var(--font-mono); color: var(--text-muted); word-break: break-word; line-height: 1.55; }
+    .module-info { color: var(--text-muted); font-size: 12px; line-height: 1.7; }
+    .module-info strong { color: var(--accent); }
+
+    /* ── 그룹 헤더 ── */
+    .group-header { padding: 8px 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); border-bottom: 1px solid var(--border); margin-bottom: 6px; margin-top: 12px; }
+    .group-header:first-child { margin-top: 0; }
   </style>
 </head>
 <body>
-  <a class="back" href="../index.html">메인으로 돌아가기</a>
-  <h1>History 모듈 테스트</h1>
-  <p class="subtitle">undo/redo 스택, 커서 이동, 복제 보존 여부를 검증합니다.</p>
-  <div id="test-results">테스트 실행 중...</div>
+<div class="page">
+  <a class="back" href="../index.html">← 메인으로 돌아가기</a>
+
+  <section class="hero">
+    <h1>History 모듈 테스트</h1>
+    <p class="subtitle">undo/redo 스택, 커서 이동, 복제 보존 여부를 검증합니다.</p>
+  </section>
+
+  <section class="layout">
+    <!-- 테스트 결과 패널 -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>테스트 결과</h2>
+          <p>페이지 로드 시 자동으로 실행됩니다.</p>
+        </div>
+      </div>
+      <div id="test-results">테스트 실행 중...</div>
+    </div>
+
+    <!-- 미리보기 패널 -->
+    <aside class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>실행 중인 테스트</h2>
+          <p>마지막으로 실행된 케이스입니다.</p>
+        </div>
+      </div>
+      <div class="preview">
+        <section class="preview-card">
+          <h3>테스트 케이스</h3>
+          <div id="current-test" class="fixture">대기 중...</div>
+        </section>
+        <section class="preview-card">
+          <h3>모듈 정보</h3>
+          <div class="module-info">
+            <strong>History</strong> — undo/redo 스택 관리<br>
+            DOM 렌더링 없음 (순수 상태 관리 모듈)<br><br>
+            <strong>주요 API</strong><br>
+            push(vnode) · undo() · redo()<br>
+            canUndo() · canRedo()<br>
+            current() · size · cursor
+          </div>
+        </section>
+      </div>
+    </aside>
+  </section>
+</div>
 
   <script type="module">
     import { History } from '../src/history.js';
-    import { describe, it, assert, assertEqual, renderResults } from './test-runner.js';
+    import { describe, it as _it, assert, assertEqual, renderResults } from './test-runner.js';
+
+    // 실행 중인 테스트 이름을 미리보기 패널에 업데이트
+    function it(name, fn) {
+      const el = document.getElementById('current-test');
+      if (el) el.textContent = name;
+      return _it(name, fn);
+    }
 
     function el(tag, props = {}, children = [], key = null) {
       return { type: 'element', tag, props, key: key ?? props['data-key'] ?? null, children };

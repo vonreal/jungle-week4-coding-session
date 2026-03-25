@@ -7,43 +7,123 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #10151d; --surface: #18202c; --surface2: #263140;
-      --border: #324357; --accent: #4db3ff; --accent2: #ffd166;
-      --danger: #ff6b6b; --text: #edf2ff; --text-muted: #9ba7c4;
+      --bg: #f6f8fb; --surface: #ffffff; --surface2: #f0f2fa;
+      --border: #dde1ef; --accent: #5b52e8; --accent2: #00a884;
+      --danger: #e03c3c; --warn: #d97706; --text: #1a1d2e; --text-muted: #6b7394;
       --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --font-sans: 'Pretendard', system-ui, sans-serif;
     }
-    body { background: var(--bg); color: var(--text); font-family: 'Pretendard', system-ui, sans-serif; padding: 24px; }
-    h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
-    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 18px; }
-    .note { margin-bottom: 24px; padding: 12px 14px; border-radius: 10px; background: rgba(255,209,102,0.12); border: 1px solid rgba(255,209,102,0.28); color: var(--accent2); font-size: 13px; line-height: 1.5; }
-    .summary { padding: 16px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; }
-    .all-pass { background: rgba(77,179,255,0.12); border: 1px solid rgba(77,179,255,0.3); color: var(--accent); }
-    .has-fail { background: rgba(255,107,107,0.12); border: 1px solid rgba(255,107,107,0.3); color: var(--danger); }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); padding: 24px 18px 56px; min-height: 100vh; }
+
+    .page { max-width: 1200px; margin: 0 auto; }
+
+    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent2); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
+    a.back:hover { text-decoration: underline; }
+
+    .hero { background: linear-gradient(135deg, rgba(91,82,232,0.07), rgba(0,168,132,0.05)); border: 1px solid rgba(91,82,232,0.18); border-radius: 20px; padding: 24px; margin-bottom: 24px; }
+    h1 { font-size: clamp(20px, 3vw, 32px); font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 6px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+    .note { margin-bottom: 0; padding: 10px 14px; border-radius: 10px; background: rgba(217,119,6,0.07); border: 1px solid rgba(217,119,6,0.2); color: #92400e; font-size: 12px; line-height: 1.5; margin-top: 10px; }
+
+    /* ── 레이아웃 ── */
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 0.9fr); gap: 20px; align-items: start; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+    /* ── 패널 공통 ── */
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+    .panel-head h2 { font-size: 15px; font-weight: 700; }
+    .panel-head p { color: var(--text-muted); font-size: 12px; margin-top: 3px; }
+
+    /* ── 테스트 결과 ── */
+    #test-results { padding: 16px; }
+    .summary { padding: 14px 18px; border-radius: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 700; }
+    .all-pass { background: rgba(0,168,132,0.08); border: 1px solid rgba(0,168,132,0.25); color: var(--accent2); }
+    .has-fail { background: rgba(224,60,60,0.08); border: 1px solid rgba(224,60,60,0.25); color: var(--danger); }
     .fail-count { font-size: 13px; font-weight: 400; color: var(--danger); }
     .result-list { display: flex; flex-direction: column; gap: 6px; }
     .result-item { display: flex; align-items: baseline; gap: 10px; padding: 9px 14px; border-radius: 7px; font-size: 13px; font-family: var(--font-mono); }
-    .result-item.pass { background: var(--surface); border-left: 3px solid var(--accent); }
-    .result-item.fail { background: rgba(255,107,107,0.08); border-left: 3px solid var(--danger); }
+    .result-item.pass { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent2); }
+    .result-item.fail { background: #fff5f5; border: 1px solid #fde8e8; border-left: 3px solid var(--danger); }
     .result-icon { font-size: 14px; }
     .result-msg { flex: 1; }
     .result-error { color: var(--danger); font-size: 11px; }
-    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent2); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
-    a.back:hover { text-decoration: underline; }
-    #sandbox { display: none; }
+
+    /* ── 미리보기 패널 ── */
+    .preview { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .preview-card { border: 1px dashed rgba(91,82,232,0.25); border-radius: 12px; padding: 12px; background: rgba(91,82,232,0.02); }
+    .preview-card h3 { font-size: 12px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
+    .preview-card p { color: var(--text-muted); font-size: 12px; line-height: 1.6; margin-bottom: 8px; }
+    .fixture-label { min-height: 56px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); padding: 10px 12px; font-size: 12px; font-family: var(--font-mono); color: var(--text-muted); word-break: break-word; line-height: 1.55; }
+
+    /* ── 샌드박스 (앱 미리보기) ── */
+    #sandbox {
+      border-radius: 10px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text);
+      padding: 14px; font-size: 13px;
+      min-height: 160px; overflow: auto;
+    }
+    #sandbox .toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    #sandbox button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); font-size: 12px; cursor: pointer; color: var(--text); }
+    #sandbox button:disabled { opacity: 0.45; cursor: not-allowed; }
+    #sandbox #history-info { font-size: 11px; color: var(--text-muted); align-self: center; }
+    #sandbox #app-alert { padding: 6px 10px; border-radius: 6px; background: rgba(224,60,60,0.07); border: 1px solid rgba(224,60,60,0.2); color: var(--danger); font-size: 12px; margin-bottom: 8px; }
+    #sandbox #app-alert[hidden] { display: none; }
+    #sandbox #real-area { border: 1px dashed var(--border); border-radius: 6px; padding: 8px; min-height: 60px; margin-bottom: 8px; }
+    #sandbox textarea { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 11px; font-family: var(--font-mono); resize: vertical; min-height: 60px; box-sizing: border-box; background: var(--surface2); color: var(--text); }
+    #sandbox #diff-log, #sandbox #vdom-tree { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 4px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
-  <a class="back" href="../index.html">메인으로 돌아가기</a>
-  <h1>App 모듈 테스트</h1>
-  <p class="subtitle">초기 렌더링, patch, undo/redo, 예외 입력 처리 흐름을 검증합니다.</p>
-  <div class="note">`app.js`는 모듈 내부 상태를 가지므로, 각 테스트마다 쿼리스트링을 다르게 붙여 새 모듈 인스턴스로 import 합니다.</div>
-  <div id="test-results">테스트 실행 중...</div>
-  <div id="sandbox"></div>
+<div class="page">
+  <a class="back" href="../index.html">← 메인으로 돌아가기</a>
+
+  <section class="hero">
+    <h1>App 모듈 테스트</h1>
+    <p class="subtitle">초기 렌더링, patch, undo/redo, 예외 입력 처리 흐름을 검증합니다.</p>
+    <div class="note">`app.js`는 모듈 내부 상태를 가지므로, 각 테스트마다 쿼리스트링을 다르게 붙여 새 모듈 인스턴스로 import 합니다.</div>
+  </section>
+
+  <section class="layout">
+    <!-- 테스트 결과 패널 -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>테스트 결과</h2>
+          <p>페이지 로드 시 자동으로 실행됩니다.</p>
+        </div>
+      </div>
+      <div id="test-results">테스트 실행 중...</div>
+    </div>
+
+    <!-- 미리보기 패널 -->
+    <aside class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>실행 중인 테스트</h2>
+          <p>현재 실행 중인 케이스와 앱 상태입니다.</p>
+        </div>
+      </div>
+      <div class="preview">
+        <section class="preview-card">
+          <h3>테스트 케이스</h3>
+          <div id="current-test" class="fixture-label">대기 중...</div>
+        </section>
+        <section class="preview-card">
+          <h3>실행 픽스처 (앱 샌드박스)</h3>
+          <p>테스트가 실제로 마운트하는 앱 DOM입니다.</p>
+          <div id="sandbox"></div>
+        </section>
+      </div>
+    </aside>
+  </section>
+</div>
 
   <script type="module">
     import { assert, renderResults } from './test-runner.js';
 
     const sandbox = document.getElementById('sandbox');
+    const currentTestEl = document.getElementById('current-test');
 
     function buildFixture() {
       sandbox.innerHTML = `
@@ -79,6 +159,7 @@
     }
 
     async function runCase(name, fn) {
+      if (currentTestEl) currentTestEl.textContent = name;
       try {
         await fn();
         console.log(`PASS: ${name}`);

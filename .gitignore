@@ -1,0 +1,6 @@
+# macOS
+.DS_Store
+
+# 분석/임시 문서
+CONTRACTS.md
+tests/patch-analysis.md
