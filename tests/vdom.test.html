@@ -496,6 +496,85 @@ describe('domToVdom', () => {
     );
   });
 
+  it('연속된 텍스트 노드 2개를 순서대로 children에 보존한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // 하나의 엘리먼트 안에 인접한 텍스트 노드가 2개 있을 때
+    // domToVdom가 둘 다 살려서 순서대로 children에 넣는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 브라우저 DOM은 텍스트가 항상 하나로만 들어오지 않는다.
+    // 편집 과정이나 DOM 조작에 따라 인접한 텍스트 노드가 나뉘어 있을 수 있다.
+    // 이 경우도 내용 손실 없이 VDOM으로 옮겨야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 childNodes를 순회하며
+    // 각 텍스트 노드를 별도의 text VNode로 변환한다.
+    // 즉 자동 병합 없이 DOM의 의미 있는 순서를 그대로 따른다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 children 배열에 text VNode 2개가 순서대로 있는지 보면 된다.
+    const el = document.createElement('div');
+    el.appendChild(document.createTextNode('Hello'));
+    el.appendChild(document.createTextNode('World'));
+
+    const vnode = domToVdom(el);
+
+    assertEqual(
+      vnode.children,
+      [
+        { type: 'text', value: 'Hello' },
+        { type: 'text', value: 'World' },
+      ],
+      '연속된 텍스트 노드는 각각의 text VNode로 보존된다',
+      {
+        input: '<div>HelloWorld</div> with two adjacent text nodes',
+        reactCompare: '실무에서는 contenteditable, 템플릿 조립, 수동 DOM 조작 중에 인접한 텍스트 노드가 생길 수 있어 이런 구조 보존이 중요하다.',
+      }
+    );
+  });
+
+  it('특수문자가 포함된 텍스트도 그대로 value에 보존한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // <script>, &, 따옴표 같은 특수문자가 들어 있는 텍스트를
+    // domToVdom가 손상 없이 text VNode value로 옮기는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 텍스트에 특수문자가 있다고 해서
+    // 태그나 HTML로 오해되면 내용이 깨질 수 있다.
+    // 표시용 텍스트는 문자 그대로 보존되는 것이 중요하다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // 텍스트 노드는 HTML 파싱 결과가 아니라
+    // node.textContent를 기반으로 value를 만든다.
+    // 따라서 특수문자도 문자열 그대로 들어가야 한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 특수문자가 이스케이프 손실 없이 value에 남는지 확인하면 된다.
+    const rawText = '<script>alert("x")<' + '/script> & "quote"';
+    const el = document.createElement('p');
+    el.textContent = rawText;
+
+    const vnode = domToVdom(el);
+
+    assertEqual(
+      vnode.children,
+      [
+        { type: 'text', value: rawText },
+      ],
+      '특수문자가 포함된 텍스트도 그대로 text VNode value에 보존된다',
+      {
+        input: '<p>&lt;script&gt;alert("x")&lt;/script&gt; &amp; "quote"</p>',
+        reactCompare: '실무에서는 사용자 입력, 코드 스니펫, HTML 예시 문자열이 그대로 보여야 하므로 텍스트 값의 원형 보존이 중요하다.',
+      }
+    );
+  });
+
   it('공백만 있는 텍스트 노드는 children에서 제외한다', () => {
     // 1. 지금 무엇을 테스트하나?
     // DOM 안에 공백만 있는 텍스트 노드가 있을 때
@@ -795,6 +874,45 @@ describe('domToVdom', () => {
       {
         input: '<div id="app" class="card" title="hello" data-key="item-1"></div>',
         reactCompare: '실무 마크업은 여러 속성이 섞여 있으므로, attribute 수가 늘어나도 안정적으로 맵핑되는지가 중요하다.',
+      }
+    );
+  });
+
+  it('빈 문자열 attribute 값도 props에 그대로 보존한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // class=""처럼 값이 빈 문자열인 속성이 있을 때
+    // domToVdom가 이를 누락하지 않고 props에 보존하는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 빈 문자열은 "값이 없다"와 "속성이 없다"가 다르다.
+    // 이 차이를 잃어버리면 diff에서 remove와 update를 구분하기 어려워진다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 attributes를 순회하면서
+    // attr.value를 그대로 props에 넣는다.
+    // 따라서 빈 문자열도 ''로 저장되어야 한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 props.class가 null이 아니라 빈 문자열인지 확인하면 된다.
+    const el = document.createElement('div');
+    el.setAttribute('class', '');
+    el.setAttribute('id', 'empty-class');
+
+    const vnode = domToVdom(el);
+
+    assertEqual(
+      vnode.props,
+      {
+        class: '',
+        id: 'empty-class',
+      },
+      '빈 문자열 attribute 값도 props에 그대로 보존된다',
+      {
+        input: '<div class="" id="empty-class"></div>',
+        reactCompare: '실무에서는 빈 문자열도 의도적인 상태값일 수 있어, undefined/null과 구분해서 보존하는 편이 diff 정확도에 유리하다.',
       }
     );
   });
@@ -1190,6 +1308,50 @@ describe('vdomToDom', () => {
     );
   });
 
+  it('hidden이 false면 실제 DOM에서 속성이 제거되어야 한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // hidden이 false인 경우에도
+    // 다른 boolean 속성과 같은 규칙으로 실제 DOM에서 제거되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // boolean 속성 처리 목록에서 특정 속성이 빠지면
+    // false인데도 DOM에 "false" 문자열 속성이 남는 식의 버그가 생길 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // 계약상 boolean attribute는 false일 때
+    // DOM에 남아 있지 않아야 한다.
+    // hidden도 disabled, checked와 같은 부류로 다뤄져야 한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 hiddenAttr가 null인지 보면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'div',
+      props: { hidden: false },
+      key: null,
+      children: [],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        hiddenAttr: domNode.getAttribute('hidden'),
+      },
+      {
+        hiddenAttr: null,
+      },
+      'hidden이 false면 실제 DOM에서 속성이 제거되어야 한다',
+      {
+        input: vnode,
+        reactCompare: '실무에서는 boolean 속성 목록이 일부만 구현되면 hidden 같은 속성에서 false 처리 누락 버그가 생길 수 있다.',
+      }
+    );
+  });
+
   it('style 객체를 실제 DOM style에 반영한다', () => {
     // 1. 지금 무엇을 테스트하나?
     // style이 문자열이 아니라 객체로 들어왔을 때
@@ -1236,6 +1398,54 @@ describe('vdomToDom', () => {
           '실무에서는 style을 문자열 attribute로 둘지, 객체 형태로 다룰지 구현마다 차이가 있다.',
           '현재 구현은 객체 style을 직접 DOM style에 병합하는 방식을 사용한다.',
         ].join('\n'),
+      }
+    );
+  });
+
+  it('style이 문자열이어도 일반 attribute처럼 실제 DOM에 반영한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // style이 객체가 아니라 문자열로 들어왔을 때
+    // vdomToDom가 이를 일반 attribute로 처리하는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 현재 구현의 style 계약은 객체를 특별 취급하지만,
+    // 문자열 style이 들어오는 경우도 있을 수 있다.
+    // 이때도 최소한 DOM attribute로 반영되어야 계약이 명확해진다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // setDomProp는 style 값이 object일 때만 Object.assign을 사용한다.
+    // 문자열이면 일반 분기로 내려가 setAttribute('style', value)를 호출한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 style attribute와 실제 style 값이 함께 반영되는지 확인하면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'div',
+      props: { style: 'color: purple; background-color: pink;' },
+      key: null,
+      children: [],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        styleAttr: domNode.getAttribute('style'),
+        color: domNode.style.color,
+        backgroundColor: domNode.style.backgroundColor,
+      },
+      {
+        styleAttr: 'color: purple; background-color: pink;',
+        color: 'purple',
+        backgroundColor: 'pink',
+      },
+      'style 문자열은 일반 attribute 규칙으로 실제 DOM에 반영된다',
+      {
+        input: vnode,
+        reactCompare: '실무에서는 style 표현이 객체 기반인지 문자열 기반인지 팀 계약에 따라 달라질 수 있어, 현재 구현의 분기 규칙을 테스트로 고정해두는 것이 중요하다.',
       }
     );
   });
@@ -1433,6 +1643,57 @@ describe('cloneVdom', () => {
     );
   });
 
+  it('style 객체를 가진 props도 복사본 수정 시 원본이 변하지 않아야 한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // props.style처럼 중첩 객체가 있을 때도
+    // cloneVdom 결과를 수정하면 원본 style 객체는 그대로 유지되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // history 스냅샷은 깊은 복사여야 한다는 계약이 있다.
+    // style 같은 중첩 객체가 공유되면
+    // undo/redo용 과거 상태가 나중 수정에 오염될 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // 깊은 복사 계약이라면
+    // props 안의 중첩 객체도 새 참조로 분리되어야 한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 style 참조가 분리됐는지,
+    // 그리고 복사본 수정 후 원본 style 값이 유지되는지를 보면 된다.
+    const original = {
+      type: 'element',
+      tag: 'div',
+      props: { style: { color: 'red', backgroundColor: 'blue' } },
+      key: null,
+      children: [],
+    };
+
+    const cloned = cloneVdom(original);
+    const sameStyleRef = cloned.props.style === original.props.style;
+    cloned.props.style.color = 'green';
+
+    assertEqual(
+      {
+        sameStyleRef,
+        originalStyle: original.props.style,
+        clonedStyle: cloned.props.style,
+      },
+      {
+        sameStyleRef: false,
+        originalStyle: { color: 'red', backgroundColor: 'blue' },
+        clonedStyle: { color: 'green', backgroundColor: 'blue' },
+      },
+      '중첩 style 객체도 원본과 분리된 깊은 복사여야 한다',
+      {
+        input: original,
+        reactCompare: '실무의 state history는 중첩 props까지 독립적이어야 안전하므로, style 같은 객체도 원본과 참조를 공유하지 않아야 한다.',
+      }
+    );
+  });
+
   it('입력이 null이면 null을 반환한다', () => {
     // 1. 지금 무엇을 테스트하나?
     // cloneVdom에 null을 넣었을 때
@@ -1604,6 +1865,43 @@ describe('DOM ↔ VDOM 왕복', () => {
       {
         input: '<section id="empty"></section>',
         reactCompare: '실무에서는 빈 컨테이너 상태도 많기 때문에, 비어 있는 children 처리 규칙이 안정적이어야 후속 업데이트가 단순해진다.',
+      }
+    );
+  });
+
+  it('null 자식으로 만든 빈 텍스트 노드도 왕복 후 소실되지 않아야 한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // null 자식을 createElement로 빈 text VNode로 만든 뒤
+    // DOM으로 렌더링하고 다시 VDOM으로 읽어와도 그 placeholder가 유지되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // null 자식을 빈 text VNode로 정규화하는 계약이 있다면
+    // 왕복 과정에서도 그 위치 정보가 사라지지 않아야 일관성이 있다.
+    // 중간에 소실되면 children 개수와 path 기준이 달라질 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // createElement는 null을 빈 text VNode로 바꾸지만,
+    // domToVdom는 빈 문자열 텍스트를 공백 노드처럼 제거할 수 있다.
+    // 이 테스트는 그 계약 충돌을 드러낸다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 왕복 전후 children 구조를 비교하면 된다.
+    const originalVnode = createElement('div', {}, [null, 'tail']);
+    const recreatedVnode = domToVdom(vdomToDom(originalVnode));
+
+    assertEqual(
+      recreatedVnode.children,
+      [
+        { type: 'text', value: '' },
+        { type: 'text', value: 'tail' },
+      ],
+      'null 자식 placeholder도 왕복 후 유지되어야 한다',
+      {
+        input: originalVnode,
+        reactCompare: '실무에서는 children 위치 보존 규칙이 흔들리면 diff path와 history 비교가 어긋날 수 있어, 빈 placeholder 처리도 일관돼야 한다.',
       }
     );
   });
