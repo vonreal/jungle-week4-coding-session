@@ -1,0 +1,1765 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VDOM Tests</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f6f8fb; --surface: #ffffff; --surface2: #eef3ff;
+      --border: #d6deea; --accent: #2952cc; --accent2: #0f9d7a;
+      --danger: #d14343; --text: #1f2937; --text-muted: #6b7280;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'Pretendard', system-ui, sans-serif; padding: 24px; }
+    h1 { font-size: 22px; font-weight: 700; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 8px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 28px; }
+    .summary { padding: 16px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; }
+    .all-pass { background: rgba(15,157,122,0.1); border: 1px solid rgba(15,157,122,0.25); color: var(--accent2); }
+    .has-fail { background: rgba(209,67,67,0.1); border: 1px solid rgba(209,67,67,0.25); color: var(--danger); }
+    .fail-count { font-size: 13px; font-weight: 400; color: var(--danger); }
+    .result-list { display: flex; flex-direction: column; gap: 6px; }
+    .result-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 10px; font-size: 13px; font-family: var(--font-mono); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(15,23,42,0.04); }
+    .result-item.pass { background: var(--surface); border-left: 4px solid var(--accent2); }
+    .result-item.fail { background: #fff5f5; border-left: 4px solid var(--danger); }
+    .result-icon { font-size: 14px; }
+    .result-msg { flex: 1; }
+    .result-error { color: var(--danger); font-size: 11px; }
+    a.back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-size: 13px; margin-bottom: 20px; }
+    a.back:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <a class="back" href="../index.html">← 메인으로 돌아가기</a>
+  <h1>VDOM Tests</h1>
+  <p class="subtitle">딸기 담당: VDOM 계약을 테스트로 고정합니다.</p>
+  <div id="test-results">테스트 실행 중...</div>
+
+<script type="module">
+import { createElement, createText, domToVdom, vdomToDom, cloneVdom } from '../src/vdom.js';
+import { init } from '../src/app.js';
+import { describe, it, assertEqual, renderResults } from './test-runner.js';
+
+const indexHtmlText = await fetch('../index.html').then(res => res.text());
+const indexDoc = new DOMParser().parseFromString(indexHtmlText, 'text/html');
+
+function mountAppSandbox() {
+  const sandbox = document.createElement('section');
+  sandbox.setAttribute('data-test-sandbox', 'app');
+  sandbox.innerHTML = `
+    <div id="real-area"></div>
+    <textarea id="test-area"></textarea>
+    <button id="btn-patch"></button>
+    <button id="btn-undo"></button>
+    <button id="btn-redo"></button>
+    <div id="diff-log"></div>
+    <div id="vdom-tree"></div>
+    <div id="history-info"></div>
+  `;
+  document.body.appendChild(sandbox);
+  return sandbox;
+}
+
+function cleanupAppSandbox() {
+  document.querySelector('[data-test-sandbox="app"]')?.remove();
+}
+
+// ──────────────────────────────────────────────
+// 1. 현재 구현 계약 테스트
+// ──────────────────────────────────────────────
+describe('createText', () => {
+  it('문자열을 text VNode로 만든다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // createText('hello')를 호출했을 때
+    // 텍스트 전용 VNode가 만들어지는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 텍스트 노드는 VDOM에서 가장 기본 단위다.
+    // 이 모양이 흔들리면 나중에 diff에서 텍스트 비교가 꼬일 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // createText는 어떤 값을 받아도
+    // { type: 'text', value: '문자열' } 형태로 맞춰준다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 페이지 결과 목록에서
+    // 이 테스트 이름이 초록색 통과로 보이는지 확인하면 된다.
+    const vnode = createText('hello');
+
+    assertEqual(
+      vnode,
+      { type: 'text', value: 'hello' },
+      '문자열 입력은 text VNode가 된다',
+      {
+        input: 'hello',
+        reactCompare: '실무에서는 텍스트를 별도 노드로 분리해 다루면 diff와 렌더링 분기가 단순해진다.',
+      }
+    );
+  });
+
+  it('숫자를 문자열로 변환해 text VNode로 만든다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // 숫자 123을 넣었을 때도 text VNode가 만들어지는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 사용자가 숫자를 자식으로 넣을 수도 있기 때문에
+    // 값 타입이 달라도 결과 형식이 같아야 안전하다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // createText 내부에는 String(value)가 있어서
+    // 숫자도 결국 '123' 같은 문자열로 바뀐다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 페이지를 새로고침하면 자동으로 다시 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 결과 목록에서 이 테스트가 통과했고,
+    // value가 문자열로 처리된다고 이해하면 된다.
+    const vnode = createText(123);
+
+    assertEqual(
+      vnode,
+      { type: 'text', value: '123' },
+      '숫자 입력은 문자열 value를 가진 text VNode가 된다',
+      {
+        input: 123,
+        reactCompare: '실무에서는 숫자 표시값도 결국 텍스트처럼 렌더링되므로, 내부 표현을 문자열로 통일해두면 비교가 쉬워진다.',
+      }
+    );
+  });
+});
+
+describe('createElement', () => {
+  it('태그명을 소문자로 저장한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // createElement('DIV')처럼 대문자로 태그를 넣어도
+    // 결과 VNode의 tag가 소문자 'div'가 되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // HTML 태그는 대소문자를 섞어 써도 브라우저가 처리하지만
+    // VDOM에서는 한 가지 규칙으로 통일해두는 편이 비교하기 쉽다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // createElement는 tag.toLowerCase()를 사용해서
+    // 태그명을 항상 소문자로 바꾼 뒤 저장한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하면
+    // 태그명 정규화 규칙이 제대로 지켜진 것이다.
+    const vnode = createElement('DIV');
+
+    assertEqual(
+      vnode.tag,
+      'div',
+      '태그명은 항상 소문자로 저장된다',
+      {
+        input: 'DIV',
+        reactCompare: '실무에서는 태그/노드 타입 비교 규칙이 흔들리면 diff 조건이 복잡해지므로, 내부 표현을 정규화해두는 편이 안전하다.',
+      }
+    );
+  });
+
+  it('data-key가 있으면 key 필드로 저장한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // createElement에 props로 data-key를 넣었을 때
+    // 결과 VNode의 key 필드에 같은 값이 들어가는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 리스트를 비교할 때 key는 아주 중요하다.
+    // 나중에 diff 알고리즘이 어떤 노드가 같은 노드인지 판단할 때
+    // data-key를 기준으로 사용할 수 있어야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // createElement는 직접 받은 key가 없으면
+    // props['data-key'] 값을 읽어서 key에 저장한다.
+    // 즉 data-key는 단순 속성이 아니라
+    // VDOM 비교를 위한 식별자 역할도 한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면
+    // 이 테스트가 자동으로 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 입력값과 실제값을 비교하면 된다.
+    const vnode = createElement('li', { 'data-key': 'item-1' });
+
+    assertEqual(
+      vnode.key,
+      'item-1',
+      'data-key는 key 필드로 저장된다',
+      {
+        input: { tag: 'li', props: { 'data-key': 'item-1' } },
+        reactCompare: '실무 리스트 렌더링에서는 안정적인 key가 있어야 항목 추가/삭제/재정렬 시 DOM 변경을 최소화할 수 있다.',
+      }
+    );
+  });
+
+  it('직접 전달한 key가 data-key보다 우선한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // createElement에 key와 data-key를 둘 다 넣었을 때
+    // 직접 전달한 key가 우선되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 현재 구현의 우선순위 규칙을 고정하지 않으면
+    // 나중에 key 해석 방식이 바뀌었을 때 팀원들이 헷갈릴 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // createElement는 key ?? props['data-key'] ?? null 순서로 값을 정한다.
+    // 즉 명시적 key가 있으면 data-key보다 먼저 사용한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 입력값과 실제 key가 우선순위 규칙대로 나오는지 확인하면 된다.
+    const vnode = createElement('li', { 'data-key': 'from-props' }, [], 'from-arg');
+
+    assertEqual(
+      vnode.key,
+      'from-arg',
+      '명시적 key는 data-key보다 우선한다',
+      {
+        input: { tag: 'li', props: { 'data-key': 'from-props' }, keyArg: 'from-arg' },
+        reactCompare: '실무에서는 key를 어디서 읽을지 우선순위를 고정해두지 않으면 리스트 동기화 디버깅이 어려워진다.',
+      }
+    );
+  });
+
+  it('문자열 자식을 text VNode로 정규화한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // createElement의 children에 문자열을 넣었을 때
+    // 그 문자열이 그대로 남는 게 아니라 text VNode로 바뀌는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // VDOM의 children 배열에는 형태가 제각각이면 안 된다.
+    // 문자열, 숫자, 객체가 섞여 있으면 나중에 diff나 render에서 다루기 어렵다.
+    // 그래서 문자열도 text VNode라는 같은 형식으로 통일해야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // createElement는 내부에서 normalizeChild를 호출한다.
+    // 이 함수는 문자열 자식을 만나면
+    // createText('문자열')을 만들어 children 안에 넣어준다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 실제 children 구조를 확인하면 된다.
+    const vnode = createElement('p', {}, ['hello']);
+
+    assertEqual(
+      vnode.children,
+      [{ type: 'text', value: 'hello' }],
+      '문자열 자식은 text VNode 배열로 변환된다',
+      {
+        input: { tag: 'p', props: {}, children: ['hello'] },
+        reactCompare: '실무에서는 children 타입이 제각각이면 렌더러와 diff가 복잡해지므로, 내부 노드 형식을 통일하는 편이 유지보수에 유리하다.',
+      }
+    );
+  });
+
+  it('숫자 자식을 text VNode로 정규화한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // createElement의 children에 숫자를 넣었을 때
+    // 숫자가 그대로 남지 않고 text VNode로 바뀌는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 화면에 숫자도 텍스트처럼 표시될 수 있다.
+    // 예를 들어 개수나 순번 같은 값이 children에 들어올 수 있는데
+    // 이때도 children 형식은 통일되어야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // normalizeChild는 숫자를 만나면 String(child)로 문자열로 바꾸고
+    // createText를 통해 text VNode를 만든다.
+    // 그래서 3은 결국 { type: 'text', value: '3' }가 된다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 숫자 입력이 문자열 value로 바뀌는지 보면 된다.
+    const vnode = createElement('p', {}, [3]);
+
+    assertEqual(
+      vnode.children,
+      [{ type: 'text', value: '3' }],
+      '숫자 자식은 문자열 value를 가진 text VNode로 변환된다',
+      {
+        input: { tag: 'p', props: {}, children: [3] },
+        reactCompare: '실무 UI에서는 수량, 카운트, 순번처럼 숫자 자식이 흔하므로 문자열 텍스트 노드로 정규화하는 규칙이 유용하다.',
+      }
+    );
+  });
+
+  it('null 자식을 빈 text VNode로 정규화한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // createElement의 children에 null을 넣었을 때
+    // null이 사라지거나 에러가 나는 대신 빈 text VNode로 바뀌는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 화면을 만들다 보면 조건에 따라 값이 없어서 null이 들어갈 수 있다.
+    // 이때도 children 배열 구조가 무너지지 않도록
+    // 안전한 기본 형태로 바꿔주는 규칙이 필요하다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // normalizeChild는 child가 null 또는 undefined이면
+    // createText('')를 반환한다.
+    // 즉 값이 없더라도 VDOM 안에서는 빈 텍스트 노드로 통일한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 null 입력이 빈 문자열 value로 바뀌는지 확인하면 된다.
+    const vnode = createElement('p', {}, [null]);
+
+    assertEqual(
+      vnode.children,
+      [{ type: 'text', value: '' }],
+      'null 자식은 빈 문자열 value를 가진 text VNode로 변환된다',
+      {
+        input: { tag: 'p', props: {}, children: [null] },
+        reactCompare: '실무에서는 조건부 렌더링 중 비어 있는 값이 자주 나오므로, null 입력의 처리 규칙을 명확히 해두는 것이 중요하다.',
+      }
+    );
+  });
+
+  it('undefined 자식을 빈 text VNode로 정규화한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // createElement의 children에 undefined를 넣었을 때
+    // undefined가 빈 text VNode로 바뀌는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 변수 값이 아직 없거나 빠져 있을 때 undefined가 들어올 수 있다.
+    // 이 경우도 null과 마찬가지로 안전하게 처리되어야
+    // children 구조가 예상대로 유지된다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // normalizeChild는 null과 undefined를 같은 규칙으로 처리한다.
+    // 둘 다 createText('')를 반환해서
+    // 빈 문자열 value를 가진 text VNode로 통일한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 undefined가 빈 문자열로 바뀌는지 확인하면 된다.
+    const vnode = createElement('p', {}, [undefined]);
+
+    assertEqual(
+      vnode.children,
+      [{ type: 'text', value: '' }],
+      'undefined 자식은 빈 문자열 value를 가진 text VNode로 변환된다',
+      {
+        input: { tag: 'p', props: {}, children: ['undefined (actual JS value)'] },
+        reactCompare: '실무에서는 초기값 누락이나 비동기 데이터 로딩 중 undefined가 자주 생기므로, 이 입력도 안전하게 처리하는 편이 좋다.',
+      }
+    );
+  });
+
+  it('props를 그대로 보존한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // createElement에 props를 넣었을 때
+    // id, class, title 같은 속성이 VNode.props에 그대로 들어가는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 나중에 vdomToDom이 실제 DOM을 만들 때
+    // 이 props 정보를 사용해서 속성을 다시 붙인다.
+    // 그래서 createElement 단계에서 props가 깨지면 렌더링도 틀어진다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // createElement는 props를 그대로 저장하지 않고
+    // { ...props }로 얕은 복사를 해서 VNode.props에 넣는다.
+    // 즉 입력으로 받은 속성 정보를 유지하면서 새 객체로 만든다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 입력 props와 실제 props가 같은지 확인하면 된다.
+    const props = { id: 'app', class: 'card', title: 'hello' };
+    const vnode = createElement('div', props);
+
+    assertEqual(
+      vnode.props,
+      { id: 'app', class: 'card', title: 'hello' },
+      '입력한 props는 VNode.props에 그대로 저장된다',
+      {
+        input: { tag: 'div', props },
+        reactCompare: '실무 렌더러는 props를 기반으로 실제 DOM 속성, 이벤트, 스타일을 연결하므로 이 정보가 유실되지 않는 것이 중요하다.',
+      }
+    );
+  });
+});
+
+describe('domToVdom', () => {
+  it('DOM element를 element VNode로 변환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // 실제 DOM 엘리먼트 <div id="app"></div>를 domToVdom에 넣었을 때
+    // element 타입의 VNode로 바뀌는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 이 프로젝트의 시작점은 "실제 DOM을 읽어서 VDOM으로 바꾸는 것"이다.
+    // 그래서 domToVdom가 가장 기본적인 엘리먼트를
+    // 올바른 VNode 형태로 바꾸는지 먼저 확인해야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 nodeType을 보고
+    // 텍스트 노드인지, 엘리먼트 노드인지 나눈다.
+    // 엘리먼트 노드라면 tagName을 소문자로 바꾸고
+    // attributes를 props에 담고
+    // children을 재귀적으로 다시 VNode로 변환한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 입력 DOM 설명과 실제 VNode 결과를 확인하면 된다.
+    const el = document.createElement('div');
+    el.setAttribute('id', 'app');
+
+    const vnode = domToVdom(el);
+
+    assertEqual(
+      vnode,
+      {
+        type: 'element',
+        tag: 'div',
+        props: { id: 'app' },
+        key: null,
+        children: [],
+      },
+      'DOM element는 element VNode로 변환된다',
+      {
+        input: '<div id="app"></div>',
+        reactCompare: '실무에서는 기존 DOM이나 SSR 결과를 읽어 상태 표현으로 바꾸는 작업이 필요할 수 있어, 기본 엘리먼트 변환 규칙이 중요하다.',
+      }
+    );
+  });
+
+  it('텍스트 자식을 text VNode로 함께 변환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // <p>Hello</p> 같은 DOM 구조를 domToVdom에 넣었을 때
+    // 부모는 element VNode, 자식 텍스트는 text VNode로 함께 변환되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 실제 화면은 태그만 있는 게 아니라 대부분 텍스트를 포함한다.
+    // 그래서 domToVdom가 자식 노드까지 재귀적으로 읽어서
+    // 올바른 트리 구조를 만드는지 확인해야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 엘리먼트 노드를 처리할 때
+    // childNodes를 하나씩 돌면서 다시 domToVdom를 호출한다.
+    // 이때 텍스트 노드를 만나면 createText로 바꿔 children에 넣는다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 children 안에 text VNode가 들어가는지 확인하면 된다.
+    const el = document.createElement('p');
+    el.textContent = 'Hello';
+
+    const vnode = domToVdom(el);
+
+    assertEqual(
+      vnode,
+      {
+        type: 'element',
+        tag: 'p',
+        props: {},
+        key: null,
+        children: [
+          { type: 'text', value: 'Hello' },
+        ],
+      },
+      'DOM 텍스트 자식은 text VNode로 변환된다',
+      {
+        input: '<p>Hello</p>',
+        reactCompare: '실무에서는 구조와 내용이 함께 보존되어야 하므로, 텍스트 자식까지 트리에 포함되는지 확인하는 것이 중요하다.',
+      }
+    );
+  });
+
+  it('공백만 있는 텍스트 노드는 children에서 제외한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // DOM 안에 공백만 있는 텍스트 노드가 있을 때
+    // domToVdom가 그 노드를 children에 넣지 않는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // HTML에는 줄바꿈이나 들여쓰기 때문에
+    // 눈에 안 보이는 공백 텍스트 노드가 자주 생긴다.
+    // 이런 노드까지 모두 children에 넣으면
+    // diff나 patch에서 불필요한 비교가 많아지고 구조도 지저분해진다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 자식 노드를 변환한 뒤
+    // text VNode이면서 value.trim() === '' 이면 건너뛴다.
+    // 즉 내용이 없는 공백 텍스트는 VDOM 트리에서 제거한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 실제 children에 공백 노드가 없는지 확인하면 된다.
+    const el = document.createElement('div');
+    el.appendChild(document.createTextNode('   '));
+    el.appendChild(document.createElement('span'));
+
+    const vnode = domToVdom(el);
+
+    assertEqual(
+      vnode.children,
+      [
+        {
+          type: 'element',
+          tag: 'span',
+          props: {},
+          key: null,
+          children: [],
+        },
+      ],
+      '공백-only 텍스트 노드는 children에 포함되지 않는다',
+      {
+        input: '<div>   <span></span></div>',
+        reactCompare: '실무에서는 들여쓰기/줄바꿈 공백이 불필요한 diff 비용을 만들 수 있어, 의미 없는 공백 노드 제거 규칙이 종종 필요하다.',
+      }
+    );
+  });
+
+  it('data-key 속성을 key 필드로 추출한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // 실제 DOM 엘리먼트에 data-key 속성이 있을 때
+    // domToVdom가 그 값을 VNode.key로 옮기는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 나중에 리스트 diff를 할 때
+    // 어떤 항목이 같은 항목인지 구분하는 기준이 key다.
+    // 그래서 DOM에서 읽은 data-key가 VDOM에도 정확히 들어가야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 먼저 attributes를 props로 모은 뒤
+    // props['data-key'] 값을 읽어서 key에 따로 저장한다.
+    // 즉 data-key는 props에도 남고, key에도 한 번 더 들어간다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 props와 key가 모두 올바른지 확인하면 된다.
+    const el = document.createElement('li');
+    el.setAttribute('data-key', 'item-1');
+
+    const vnode = domToVdom(el);
+
+    assertEqual(
+      vnode,
+      {
+        type: 'element',
+        tag: 'li',
+        props: { 'data-key': 'item-1' },
+        key: 'item-1',
+        children: [],
+      },
+      'data-key 속성은 props와 key에 모두 반영된다',
+      {
+        input: '<li data-key="item-1"></li>',
+        reactCompare: '실무에서는 DOM에서 읽은 식별자 정보가 VDOM의 key로 이어져야 리스트 동기화가 안정적이다.',
+      }
+    );
+  });
+
+  it('입력이 null이면 null을 반환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // domToVdom에 null을 넣었을 때
+    // 에러 없이 null을 그대로 반환하는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 실제 코드에서는 아직 DOM을 못 찾았거나
+    // 잘못된 입력이 들어오는 상황이 있을 수 있다.
+    // 이때 함수가 바로 죽지 않고 안전하게 처리해야
+    // 상위 로직에서도 방어가 쉬워진다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom 맨 앞에는 if (!node) return null; 이 있다.
+    // 즉 node가 없으면 더 내려가지 않고
+    // 곧바로 null을 반환하는 방어 로직이 들어 있다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 입력값 null과 실제 반환값 null을 확인하면 된다.
+    const vnode = domToVdom(null);
+
+    assertEqual(
+      vnode,
+      null,
+      'null 입력은 null 반환으로 안전하게 처리된다',
+      {
+        input: null,
+        reactCompare: '실무 코드에서는 DOM 조회 실패나 비어 있는 입력이 흔하므로, 가장 바깥 입력 방어가 중요하다.',
+      }
+    );
+  });
+
+  it('텍스트 노드를 text VNode로 변환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // 실제 DOM의 텍스트 노드를 domToVdom에 넣었을 때
+    // text 타입의 VNode로 바뀌는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // element만 변환되고 텍스트 노드가 빠지면
+    // 화면 내용이 사라진 채 구조만 남게 된다.
+    // 그래서 텍스트 노드 자체도 직접 검증할 필요가 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 node.nodeType이 Node.TEXT_NODE이면
+    // createText(node.textContent)를 호출한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 입력 텍스트와 실제 text VNode를 확인하면 된다.
+    const textNode = document.createTextNode('Plain text');
+
+    const vnode = domToVdom(textNode);
+
+    assertEqual(
+      vnode,
+      { type: 'text', value: 'Plain text' },
+      '텍스트 노드는 text VNode로 변환된다',
+      {
+        input: 'Text node: "Plain text"',
+        reactCompare: '실무 렌더링 엔진은 텍스트와 엘리먼트를 구분해서 처리하므로, 텍스트 노드 직접 변환 계약도 중요하다.',
+      }
+    );
+  });
+
+  it('지원하지 않는 nodeType은 null을 반환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // 텍스트 노드도 엘리먼트 노드도 아닌 입력이 들어왔을 때
+    // domToVdom가 null을 반환하는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 브라우저에는 comment 같은 다양한 노드 타입이 있다.
+    // 지금 구현이 모든 노드를 지원하지 않으므로,
+    // 지원하지 않는 타입을 어떻게 처리하는지 명확히 해둘 필요가 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 TEXT_NODE, ELEMENT_NODE가 아니면
+    // 함수 마지막에서 null을 반환한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 지원하지 않는 입력과 null 반환을 확인하면 된다.
+    const commentNode = document.createComment('not supported');
+
+    const vnode = domToVdom(commentNode);
+
+    assertEqual(
+      vnode,
+      null,
+      '지원하지 않는 nodeType은 null로 처리된다',
+      {
+        input: 'Comment node: <!--not supported-->',
+        reactCompare: '실무에서는 모든 DOM 노드를 다 지원하지 않을 수 있으므로, 비지원 타입의 처리 방침을 명확히 하는 것이 중요하다.',
+      }
+    );
+  });
+
+  it('중첩된 DOM 구조를 재귀적으로 VDOM 트리로 변환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // div 안에 ul, 그 안에 li와 text가 있는 중첩 DOM 구조를
+    // domToVdom가 전체 트리 형태로 변환하는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 실제 요구사항의 샘플 HTML은 한두 단계가 아니라
+    // 중첩된 트리 구조를 가진다.
+    // 그래서 단일 노드가 아니라 트리 전체가 맞게 변환되는지 봐야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 childNodes를 돌면서 자신을 재귀 호출하므로
+    // 자식, 손자까지 내려가며 VDOM 트리를 만든다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 children 안에 ul, li, text 구조가 유지되는지 보면 된다.
+    const root = document.createElement('div');
+    const ul = document.createElement('ul');
+    const li = document.createElement('li');
+    li.textContent = 'Item';
+    ul.appendChild(li);
+    root.appendChild(ul);
+
+    const vnode = domToVdom(root);
+
+    assertEqual(
+      vnode,
+      {
+        type: 'element',
+        tag: 'div',
+        props: {},
+        key: null,
+        children: [
+          {
+            type: 'element',
+            tag: 'ul',
+            props: {},
+            key: null,
+            children: [
+              {
+                type: 'element',
+                tag: 'li',
+                props: {},
+                key: null,
+                children: [
+                  { type: 'text', value: 'Item' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      '중첩된 DOM 구조는 재귀적인 VDOM 트리로 변환된다',
+      {
+        input: '<div><ul><li>Item</li></ul></div>',
+        reactCompare: [
+          '실무에서는 화면이 대부분 중첩 트리 구조라서,',
+          '한 레벨만 맞는 것이 아니라 트리 전체가 안정적으로 변환되어야 한다.',
+        ].join('\n'),
+      }
+    );
+  });
+
+  it('여러 attribute를 함께 props로 보존한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // id, class, title, data-key처럼 여러 속성이 함께 있는 DOM을
+    // domToVdom가 모두 props에 담는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 실제 마크업은 속성 하나만 달린 경우보다 여러 속성이 섞인 경우가 훨씬 많다.
+    // 그래서 여러 attribute를 동시에 보존하는지 확인할 필요가 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 node.attributes를 순회하면서
+    // attr.name / attr.value를 props 객체에 차례로 복사한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 입력 HTML의 여러 속성이 props에 그대로 있는지 확인하면 된다.
+    const el = document.createElement('div');
+    el.setAttribute('id', 'app');
+    el.setAttribute('class', 'card');
+    el.setAttribute('title', 'hello');
+    el.setAttribute('data-key', 'item-1');
+
+    const vnode = domToVdom(el);
+
+    assertEqual(
+      vnode.props,
+      {
+        id: 'app',
+        class: 'card',
+        title: 'hello',
+        'data-key': 'item-1',
+      },
+      '여러 attribute는 props에 함께 보존된다',
+      {
+        input: '<div id="app" class="card" title="hello" data-key="item-1"></div>',
+        reactCompare: '실무 마크업은 여러 속성이 섞여 있으므로, attribute 수가 늘어나도 안정적으로 맵핑되는지가 중요하다.',
+      }
+    );
+  });
+});
+
+describe('vdomToDom', () => {
+  it('text VNode를 실제 텍스트 노드로 변환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // { type: 'text', value: 'Hello' } 형태의 text VNode를
+    // vdomToDom에 넣었을 때 실제 텍스트 노드가 만들어지는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // VDOM은 결국 화면에 보여주기 위해 실제 DOM으로 다시 바뀌어야 한다.
+    // 그중 가장 작은 단위가 텍스트 노드이므로
+    // 여기부터 정확하게 동작하는지 먼저 확인해야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // vdomToDom는 vnode.type이 'text'이면
+    // document.createTextNode(vnode.value)를 호출한다.
+    // 즉 text VNode는 실제 브라우저의 텍스트 노드로 변환된다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 입력 VNode와 실제 DOM 노드 정보가 맞는지 확인하면 된다.
+    const vnode = { type: 'text', value: 'Hello' };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        nodeType: domNode.nodeType,
+        textContent: domNode.textContent,
+      },
+      {
+        nodeType: Node.TEXT_NODE,
+        textContent: 'Hello',
+      },
+      'text VNode는 실제 텍스트 노드로 변환된다',
+      {
+        input: vnode,
+        reactCompare: '실무에서는 텍스트 노드 변경이 가장 자주 일어나는 업데이트 중 하나라, 가장 작은 단위 변환이 안정적이어야 한다.',
+      }
+    );
+  });
+
+  it('입력이 null이면 빈 텍스트 노드를 반환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // vdomToDom에 null을 넣었을 때
+    // 에러를 내지 않고 빈 텍스트 노드를 만드는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 상위 로직에서 vnode가 비어 있는 상태가 들어올 수 있다.
+    // 이때 화면 렌더링이 완전히 깨지지 않게
+    // 최소한의 안전한 반환값을 주는지 확인할 필요가 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // vdomToDom는 맨 앞에서 if (!vnode) return document.createTextNode('');
+    // 를 사용한다.
+    // 즉 입력이 없으면 빈 문자열을 가진 텍스트 노드를 만든다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 실제 반환값이 빈 텍스트 노드인지 확인하면 된다.
+    const domNode = vdomToDom(null);
+
+    assertEqual(
+      {
+        nodeType: domNode.nodeType,
+        textContent: domNode.textContent,
+      },
+      {
+        nodeType: Node.TEXT_NODE,
+        textContent: '',
+      },
+      'null 입력은 빈 텍스트 노드 반환으로 안전하게 처리된다',
+      {
+        input: null,
+        reactCompare: '실무에서는 빈 상태를 완전히 예외로 터뜨리기보다 최소한의 안전한 렌더 결과로 처리하는 전략이 쓰이기도 한다.',
+      }
+    );
+  });
+
+  it('element VNode를 실제 엘리먼트 노드로 변환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // element 타입의 VNode를 vdomToDom에 넣었을 때
+    // 실제 브라우저 엘리먼트 노드가 만들어지는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 화면의 대부분은 텍스트만이 아니라 태그 구조로 이루어져 있다.
+    // 그래서 element VNode를 실제 DOM element로 되돌리는 기능이
+    // 정확해야 화면 렌더링이 가능하다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // vdomToDom는 text가 아니면 document.createElement(vnode.tag)를 호출한다.
+    // 그 다음 props를 붙이고, children을 재귀적으로 append 한다.
+    // 이번 테스트는 그중 가장 기본인 "태그 생성"을 확인하는 단계다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 tagName과 nodeType이 맞는지 확인하면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'div',
+      props: {},
+      key: null,
+      children: [],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        nodeType: domNode.nodeType,
+        tagName: domNode.tagName.toLowerCase(),
+      },
+      {
+        nodeType: Node.ELEMENT_NODE,
+        tagName: 'div',
+      },
+      'element VNode는 실제 엘리먼트 노드로 변환된다',
+      {
+        input: vnode,
+        reactCompare: '실무 렌더러는 노드 타입에 따라 실제 DOM 생성 분기가 갈리므로, element 생성 규칙이 가장 기본 계약이 된다.',
+      }
+    );
+  });
+
+  it('props를 실제 DOM 속성으로 반영한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // element VNode에 들어 있는 props가
+    // 실제 DOM 엘리먼트의 속성으로 붙는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 화면을 렌더링할 때 id, class, title 같은 속성이 빠지면
+    // 스타일도 깨지고 식별도 어려워진다.
+    // 그래서 vdomToDom가 VNode.props를 정확히 DOM에 반영해야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // vdomToDom는 props를 순회하면서 setDomProp를 호출한다.
+    // setDomProp는 기본적으로 el.setAttribute(key, value)를 사용해서
+    // DOM 속성을 실제로 붙인다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 입력 props와 실제 DOM 속성이 같은지 확인하면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'div',
+      props: { id: 'app', class: 'card', title: 'hello' },
+      key: null,
+      children: [],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        id: domNode.getAttribute('id'),
+        class: domNode.getAttribute('class'),
+        title: domNode.getAttribute('title'),
+      },
+      {
+        id: 'app',
+        class: 'card',
+        title: 'hello',
+      },
+      'VNode.props는 실제 DOM 속성으로 반영된다',
+      {
+        input: vnode,
+        reactCompare: [
+          'React도 DOM 속성 렌더링 시 props를 실제 DOM attribute/property로 반영한다.',
+          '다만 React element 내부에서는 children이 props 안에 있고,',
+          '우리 구현은 children을 별도 필드로 둔 단순화된 VDOM 구조를 사용한다.',
+        ].join('\n'),
+      }
+    );
+  });
+
+  it('자식 VNode들을 재귀적으로 실제 DOM 자식으로 붙인다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // 부모 element VNode 안에 자식 text/element VNode가 있을 때
+    // vdomToDom가 자식까지 실제 DOM으로 변환해서 붙이는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 화면은 한 개의 태그로 끝나지 않고 트리 구조로 만들어진다.
+    // 그래서 부모만 만들고 끝나면 안 되고,
+    // 자식도 재귀적으로 실제 DOM 트리로 만들어야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // vdomToDom는 children을 순회하면서
+    // 각 child에 대해 다시 vdomToDom를 호출하고,
+    // 그 결과를 appendChild로 부모에 붙인다.
+    // 즉 이 함수는 트리 전체를 내려가며 DOM을 만든다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 실제 childNodes 구조가 기대값과 같은지 확인하면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'div',
+      props: {},
+      key: null,
+      children: [
+        { type: 'text', value: 'Hello' },
+        {
+          type: 'element',
+          tag: 'span',
+          props: {},
+          key: null,
+          children: [],
+        },
+      ],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        childCount: domNode.childNodes.length,
+        firstChildType: domNode.childNodes[0]?.nodeType,
+        firstChildText: domNode.childNodes[0]?.textContent,
+        secondChildType: domNode.childNodes[1]?.nodeType,
+        secondChildTag: domNode.childNodes[1]?.tagName?.toLowerCase(),
+      },
+      {
+        childCount: 2,
+        firstChildType: Node.TEXT_NODE,
+        firstChildText: 'Hello',
+        secondChildType: Node.ELEMENT_NODE,
+        secondChildTag: 'span',
+      },
+      '자식 VNode들은 순서대로 실제 DOM 자식으로 변환된다',
+      {
+        input: vnode,
+        reactCompare: '실무에서는 자식 순서가 바뀌면 UI 의미가 달라질 수 있으므로, 재귀 렌더링뿐 아니라 순서 보존도 중요하다.',
+      }
+    );
+  });
+
+  it('disabled 불리언 props를 실제 DOM 속성으로 반영한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // disabled 같은 불리언 props가 있을 때
+    // vdomToDom가 실제 DOM 속성으로 올바르게 반영하는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 일반 문자열 속성과 달리 disabled는
+    // "값"보다 "속성의 존재 여부"가 더 중요하다.
+    // 이런 불리언 속성은 일반 속성과 처리 방식이 달라서
+    // 별도로 테스트해두는 것이 안전하다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // setDomProp는 booleanAttrs 목록에 disabled를 포함하고,
+    // 값이 truthy면 el.setAttribute('disabled', '')를 호출한다.
+    // 즉 disabled는 빈 문자열 속성으로 붙는다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 실제 DOM의 disabled 속성이 존재하는지 확인하면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'button',
+      props: { disabled: true },
+      key: null,
+      children: [],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        disabledAttr: domNode.getAttribute('disabled'),
+      },
+      {
+        disabledAttr: '',
+      },
+      'disabled 불리언 props는 빈 문자열 속성으로 반영된다',
+      {
+        input: vnode,
+        reactCompare: [
+          '실무에서는 disabled 같은 불리언 속성은 값보다 "속성의 존재 여부"가 더 중요하다.',
+          '프레임워크를 쓰더라도 결국 DOM에는 boolean attribute 개념으로 반영되는지 확인하는 편이 안전하다.',
+        ].join('\n'),
+      }
+    );
+  });
+
+  it('disabled가 false면 실제 DOM에서 속성을 제거한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // disabled가 false인 경우
+    // vdomToDom가 disabled 속성을 붙이지 않는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 불리언 속성은 true일 때만 중요한 것이 아니라
+    // false일 때 실제로 제거되는지도 중요하다.
+    // 이 부분이 잘못되면 버튼이 의도치 않게 계속 비활성화될 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // setDomProp는 booleanAttrs에 대해
+    // false, 'false', null, undefined면 removeAttribute를 호출한다.
+    // 즉 disabled: false는 "disabled 없음" 상태가 되어야 한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 disabled 속성이 null인지 확인하면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'button',
+      props: { disabled: false },
+      key: null,
+      children: [],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        disabledAttr: domNode.getAttribute('disabled'),
+      },
+      {
+        disabledAttr: null,
+      },
+      'disabled가 false면 실제 DOM에서 속성이 제거된다',
+      {
+        input: vnode,
+        reactCompare: [
+          '실무에서는 boolean 속성이 false일 때 DOM에 남아 있지 않는지가 중요하다.',
+          '비활성/활성 토글 UI에서 이 규칙이 틀리면 상태 버그로 바로 이어질 수 있다.',
+        ].join('\n'),
+      }
+    );
+  });
+
+  it('disabled가 문자열 false여도 실제 DOM에서 속성을 제거한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // disabled 값이 boolean false가 아니라 문자열 'false'여도
+    // 실제 DOM에서 속성이 제거되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 실무에서는 입력 값이 문자열로 들어오는 경우가 있다.
+    // 특히 폼 데이터나 직렬화된 값을 다룰 때 이런 케이스가 생길 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // setDomProp는 false뿐 아니라 'false' 문자열도
+    // 제거 조건으로 취급한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 disabledAttr가 null인지 보면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'button',
+      props: { disabled: 'false' },
+      key: null,
+      children: [],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      { disabledAttr: domNode.getAttribute('disabled') },
+      { disabledAttr: null },
+      'disabled가 문자열 false여도 속성은 제거된다',
+      {
+        input: vnode,
+        reactCompare: [
+          '실무에서는 값이 string으로 흘러들어오는 상황을 자주 고려해야 한다.',
+          '이 구현은 "false" 문자열도 비활성 속성 제거로 처리한다.',
+        ].join('\n'),
+      }
+    );
+  });
+
+  it('style 객체를 실제 DOM style에 반영한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // style이 문자열이 아니라 객체로 들어왔을 때
+    // vdomToDom가 실제 DOM style에 값을 반영하는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 현재 구현에서 style은 일반 문자열 props와 다르게 특별 취급된다.
+    // 이건 계약서에도 적은 "props 타입이 완전히 한 가지가 아니다"라는 지점이라
+    // 테스트로 고정해둘 필요가 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // setDomProp는 key가 'style'이고 value가 object면
+    // setAttribute 대신 Object.assign(el.style, value)를 사용한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 입력 style 객체와 실제 style 값이 같은지 확인하면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'div',
+      props: { style: { color: 'red', backgroundColor: 'blue' } },
+      key: null,
+      children: [],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        color: domNode.style.color,
+        backgroundColor: domNode.style.backgroundColor,
+      },
+      {
+        color: 'red',
+        backgroundColor: 'blue',
+      },
+      'style 객체는 실제 DOM style에 반영된다',
+      {
+        input: vnode,
+        reactCompare: [
+          '실무에서는 style을 문자열 attribute로 둘지, 객체 형태로 다룰지 구현마다 차이가 있다.',
+          '현재 구현은 객체 style을 직접 DOM style에 병합하는 방식을 사용한다.',
+        ].join('\n'),
+      }
+    );
+  });
+
+  it('checked 불리언 props도 실제 DOM 속성으로 반영한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // checked 같은 다른 boolean 속성도
+    // disabled와 같은 규칙으로 DOM에 반영되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // boolean 속성 처리가 disabled 하나만 맞고 나머지가 틀리면
+    // 실제 폼 UI에서 버그가 날 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // setDomProp의 booleanAttrs 목록에는 checked도 포함되어 있다.
+    // 따라서 true면 빈 문자열 속성으로 붙어야 한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 checked 속성이 실제 DOM에 존재하는지 확인하면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'input',
+      props: { checked: true },
+      key: null,
+      children: [],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      { checkedAttr: domNode.getAttribute('checked') },
+      { checkedAttr: '' },
+      'checked 불리언 props는 빈 문자열 속성으로 반영된다',
+      {
+        input: vnode,
+        reactCompare: '실무 폼 UI에서는 checked, selected, disabled 같은 boolean 속성이 일관되게 처리되어야 상태 버그를 줄일 수 있다.',
+      }
+    );
+  });
+
+  it('style과 children이 함께 있어도 둘 다 반영한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // style props와 text children이 함께 있는 VNode를
+    // vdomToDom가 동시에 처리하는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 실제 컴포넌트는 속성만 있거나 자식만 있는 경우보다
+    // 여러 요소가 함께 있는 경우가 많다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // vdomToDom는 먼저 props를 적용하고
+    // 그 다음 children을 순회하며 append 한다.
+    // 즉 style과 children은 서로 배타적이지 않고 함께 처리된다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 style 값과 자식 텍스트가 함께 살아 있는지 보면 된다.
+    const vnode = {
+      type: 'element',
+      tag: 'p',
+      props: { style: { color: 'green' } },
+      key: null,
+      children: [
+        { type: 'text', value: 'Styled text' },
+      ],
+    };
+
+    const domNode = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        color: domNode.style.color,
+        text: domNode.textContent,
+      },
+      {
+        color: 'green',
+        text: 'Styled text',
+      },
+      'style과 children은 함께 실제 DOM에 반영된다',
+      {
+        input: vnode,
+        reactCompare: '실무에서는 속성 적용과 자식 렌더링이 함께 일어나므로, 한쪽만 맞는 테스트보다 조합 케이스가 더 유의미하다.',
+      }
+    );
+  });
+});
+
+describe('cloneVdom', () => {
+  it('복사본을 수정해도 원본 VDOM은 변하지 않는다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // cloneVdom으로 복사한 뒤 복사본의 props와 children을 바꿨을 때
+    // 원본 VDOM 데이터가 그대로 유지되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // history, undo/redo 같은 기능은
+    // 예전 상태를 안전하게 저장해두는 것이 핵심이다.
+    // 얕은 복사면 새 상태를 바꿀 때 옛 상태까지 같이 바뀌어서
+    // 히스토리 기능이 망가질 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // cloneVdom는 element면 props를 새 객체로 복사하고,
+    // children도 재귀적으로 다시 cloneVdom를 호출한다.
+    // 그래서 중첩된 자식까지 독립된 새 객체가 된다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 원본 구조가 수정 전 그대로 남아 있는지 확인하면 된다.
+    const original = {
+      type: 'element',
+      tag: 'div',
+      props: { id: 'app' },
+      key: null,
+      children: [
+        { type: 'text', value: 'Hello' },
+        {
+          type: 'element',
+          tag: 'span',
+          props: { class: 'label' },
+          key: null,
+          children: [],
+        },
+      ],
+    };
+
+    const cloned = cloneVdom(original);
+    cloned.props.id = 'changed';
+    cloned.children[0].value = 'Changed';
+    cloned.children[1].props.class = 'updated';
+
+    assertEqual(
+      original,
+      {
+        type: 'element',
+        tag: 'div',
+        props: { id: 'app' },
+        key: null,
+        children: [
+          { type: 'text', value: 'Hello' },
+          {
+            type: 'element',
+            tag: 'span',
+            props: { class: 'label' },
+            key: null,
+            children: [],
+          },
+        ],
+      },
+      'cloneVdom은 원본과 분리된 깊은 복사본을 만든다',
+      {
+        input: original,
+        reactCompare: '실무의 undo/redo, 낙관적 업데이트, 이전 상태 비교는 원본 스냅샷 보존이 핵심이라 깊은 복사 계약이 중요하다.',
+      }
+    );
+  });
+
+  it('text VNode도 새 객체로 복사한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // text VNode를 cloneVdom으로 복사한 뒤
+    // 복사본의 value를 바꿔도 원본이 유지되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // element만 깊은 복사되고 text는 같은 객체를 공유하면
+    // 히스토리나 diff에서 텍스트가 의도치 않게 같이 바뀔 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // cloneVdom는 text 타입이면 바로 새 객체
+    // { type: 'text', value: vnode.value } 를 만들어 반환한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 원본 text VNode가 그대로인지 확인하면 된다.
+    const original = { type: 'text', value: 'Hello' };
+    const cloned = cloneVdom(original);
+    cloned.value = 'Changed';
+
+    assertEqual(
+      original,
+      { type: 'text', value: 'Hello' },
+      'text VNode도 원본과 분리된 새 객체로 복사된다',
+      {
+        input: { type: 'text', value: 'Hello' },
+        reactCompare: '실무에서는 텍스트만 바뀌는 케이스도 많아, text 노드도 독립 스냅샷이어야 상태 추적이 안전하다.',
+      }
+    );
+  });
+
+  it('입력이 null이면 null을 반환한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // cloneVdom에 null을 넣었을 때
+    // 안전하게 null을 그대로 반환하는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 히스토리나 방어 로직에서 값이 없을 수도 있으므로
+    // clone 단계도 null 입력을 안전하게 처리해야 한다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // cloneVdom는 맨 앞에서 if (!vnode) return null; 로 처리한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 입력값 null과 반환값 null을 확인하면 된다.
+    const cloned = cloneVdom(null);
+
+    assertEqual(
+      cloned,
+      null,
+      'cloneVdom은 null 입력을 null로 반환한다',
+      {
+        input: null,
+        reactCompare: '실무 상태 파이프라인에서는 빈 입력이 섞여 들어올 수 있으므로 clone 함수도 null-safe한 편이 다루기 쉽다.',
+      }
+    );
+  });
+});
+
+describe('DOM ↔ VDOM 왕복', () => {
+  it('DOM을 VDOM으로 바꾼 뒤 다시 DOM으로 만들면 기본 구조가 유지된다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // 실제 DOM을 domToVdom로 바꾸고,
+    // 그 결과를 다시 vdomToDom로 만들었을 때
+    // 기본 태그/속성/텍스트 구조가 유지되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 이 프로젝트는 처음에 실제 DOM을 읽어서 VDOM을 만들고,
+    // 나중에 그 VDOM으로 테스트 영역이나 실제 영역을 다시 렌더링한다.
+    // 즉 양방향 변환이 모두 어느 정도 일관돼야 요구사항을 만족할 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 DOM을 JS 객체 트리로 바꾸고,
+    // vdomToDom는 그 JS 객체 트리를 다시 실제 DOM으로 만든다.
+    // 이 테스트는 두 함수가 함께 작동했을 때
+    // 핵심 구조가 보존되는지를 보는 통합 성격의 테스트다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 테스트 결과 목록에서 이 항목이 통과하는지 보고,
+    // 자세히 보기를 눌러 입력 HTML과 실제 결과 구조를 비교하면 된다.
+    const originalDom = document.createElement('div');
+    originalDom.setAttribute('id', 'app');
+
+    const child = document.createElement('p');
+    child.textContent = 'Hello';
+    originalDom.appendChild(child);
+
+    const vnode = domToVdom(originalDom);
+    const recreatedDom = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        tagName: recreatedDom.tagName.toLowerCase(),
+        id: recreatedDom.getAttribute('id'),
+        childTag: recreatedDom.childNodes[0]?.tagName?.toLowerCase(),
+        childText: recreatedDom.childNodes[0]?.textContent,
+      },
+      {
+        tagName: 'div',
+        id: 'app',
+        childTag: 'p',
+        childText: 'Hello',
+      },
+      'DOM -> VDOM -> DOM 왕복 후에도 기본 구조가 유지된다',
+      {
+        input: '<div id="app"><p>Hello</p></div>',
+        reactCompare: '실무에서는 파싱과 렌더링 사이를 왕복할 때 핵심 구조가 유지되는지가 중요하며, 100% 동일성보다 의미 보존이 더 중요할 때가 많다.',
+      }
+    );
+  });
+
+  it('data-key가 있는 DOM도 왕복 후 key 관련 구조를 유지한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // data-key가 있는 DOM을 VDOM으로 바꾼 뒤 다시 DOM으로 만들었을 때
+    // data-key 속성이 유지되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 리스트 diff에서 중요한 key 정보는
+    // DOM -> VDOM -> DOM 흐름에서도 잃어버리면 안 된다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 data-key를 props와 key로 저장하고,
+    // vdomToDom는 props를 다시 DOM attribute로 반영한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 data-key가 최종 DOM에도 남아 있는지 보면 된다.
+    const originalDom = document.createElement('li');
+    originalDom.setAttribute('data-key', 'item-1');
+    originalDom.textContent = 'Milk';
+
+    const vnode = domToVdom(originalDom);
+    const recreatedDom = vdomToDom(vnode);
+
+    assertEqual(
+      {
+        tagName: recreatedDom.tagName.toLowerCase(),
+        dataKey: recreatedDom.getAttribute('data-key'),
+        text: recreatedDom.textContent,
+      },
+      {
+        tagName: 'li',
+        dataKey: 'item-1',
+        text: 'Milk',
+      },
+      'data-key가 있는 DOM도 왕복 후 핵심 구조를 유지한다',
+      {
+        input: '<li data-key="item-1">Milk</li>',
+        reactCompare: [
+          '실무에서는 key 정보가 화면에 직접 보이지 않더라도 리스트 식별에 중요하다.',
+          '현재 구현은 data-key attribute를 통해 이 식별 정보를 왕복 보존한다.',
+        ].join('\n'),
+      }
+    );
+  });
+
+  it('children이 없는 단순 DOM도 왕복 후 빈 children 구조를 유지한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // 자식이 없는 단순 DOM을 왕복했을 때
+    // 불필요한 자식이 생기지 않고 빈 구조가 유지되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 단순 노드도 복잡한 노드만큼 자주 쓰이며,
+    // 빈 children 처리 규칙이 흔들리면 patch 경로도 헷갈릴 수 있다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // domToVdom는 childNodes가 없으면 children: []를 만들고,
+    // vdomToDom도 children이 없으면 추가 append 없이 element만 생성한다.
+    //
+    // 4. 어떻게 실행하나?
+    // tests/vdom.test.html 파일을 브라우저에서 열거나 새로고침하면 자동 실행된다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 왕복 후 childNodes 개수가 0인지 보면 된다.
+    const originalDom = document.createElement('section');
+    originalDom.setAttribute('id', 'empty');
+
+    const recreatedDom = vdomToDom(domToVdom(originalDom));
+
+    assertEqual(
+      {
+        tagName: recreatedDom.tagName.toLowerCase(),
+        id: recreatedDom.getAttribute('id'),
+        childCount: recreatedDom.childNodes.length,
+      },
+      {
+        tagName: 'section',
+        id: 'empty',
+        childCount: 0,
+      },
+      '자식 없는 DOM도 왕복 후 빈 구조를 유지한다',
+      {
+        input: '<section id="empty"></section>',
+        reactCompare: '실무에서는 빈 컨테이너 상태도 많기 때문에, 비어 있는 children 처리 규칙이 안정적이어야 후속 업데이트가 단순해진다.',
+      }
+    );
+  });
+});
+
+// ──────────────────────────────────────────────
+// 2. 과제 요구사항 기준 테스트
+// ──────────────────────────────────────────────
+describe('과제 요구사항 기준 테스트', () => {
+  it('메인 페이지에 실제 영역, 테스트 영역, Patch/뒤로가기/앞으로가기 버튼이 있다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // index.html에 과제에서 요구한 핵심 UI 요소들이 실제로 있는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 기능이 아무리 좋아도 요구한 화면 구조가 빠져 있으면 과제 요구사항을 만족했다고 보기 어렵다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // 이 테스트는 구현 로직이 아니라 페이지 골격 자체를 검증한다.
+    // 즉 요구사항의 "UI 계약"을 확인하는 테스트다.
+    //
+    // 4. 어떻게 실행하나?
+    // 서버가 켜진 상태에서 tests/vdom.test.html을 열면
+    // index.html을 fetch해서 자동 검사한다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 필수 요소들의 존재 여부를 바로 비교하면 된다.
+    assertEqual(
+      {
+        realArea: !!indexDoc.getElementById('real-area'),
+        testArea: !!indexDoc.getElementById('test-area'),
+        patchButton: !!indexDoc.getElementById('btn-patch'),
+        undoButton: !!indexDoc.getElementById('btn-undo'),
+        redoButton: !!indexDoc.getElementById('btn-redo'),
+      },
+      {
+        realArea: true,
+        testArea: true,
+        patchButton: true,
+        undoButton: true,
+        redoButton: true,
+      },
+      '요구된 핵심 UI 요소가 메인 페이지에 존재한다',
+      {
+        input: 'index.html',
+        reactCompare: '실무에서도 기능 테스트 이전에 화면 골격과 필수 인터랙션 포인트가 존재하는지 확인하는 smoke test가 중요하다.',
+      }
+    );
+  });
+
+  it('초기화부터 Patch, Undo, Redo까지 요구사항의 핵심 흐름이 동작한다', () => {
+    // 1. 지금 무엇을 테스트하나?
+    // app.init() 이후
+    // 초기 렌더 -> 테스트 영역 수정 -> Patch -> Undo -> Redo 흐름이
+    // 실제 영역, 테스트 영역, 히스토리에 맞게 반영되는지 확인한다.
+    //
+    // 2. 왜 이 테스트가 필요한가?
+    // 이 테스트 하나가 과제 요구사항의 핵심 흐름 대부분을 덮는다.
+    // 즉 "로드", "Patch 적용", "히스토리 저장", "Undo/Redo 동기화"를 한 번에 보는 통합 테스트다.
+    //
+    // 3. 여기서 이해해야 하는 로직은?
+    // init은 초기 상태 세팅,
+    // Patch는 domToVdom -> diff -> applyPatches -> history.push,
+    // Undo/Redo는 History에서 상태를 꺼내 실제 영역과 테스트 영역을 함께 되돌린다.
+    //
+    // 4. 어떻게 실행하나?
+    // 테스트용 샌드박스 DOM을 만든 뒤 init을 호출하고,
+    // 버튼 click을 직접 발생시켜 흐름을 검증한다.
+    //
+    // 5. 사용자는 어디서 확인하나?
+    // 자세히 보기를 눌러 초기화, Patch 후 상태, Undo 후 상태, Redo 후 상태가 모두 기대와 맞는지 한눈에 볼 수 있다.
+    cleanupAppSandbox();
+    const sandbox = mountAppSandbox();
+
+    try {
+      init();
+
+      const realArea = sandbox.querySelector('#real-area');
+      const testArea = sandbox.querySelector('#test-area');
+      const patchButton = sandbox.querySelector('#btn-patch');
+      const undoButton = sandbox.querySelector('#btn-undo');
+      const redoButton = sandbox.querySelector('#btn-redo');
+      const historyInfo = sandbox.querySelector('#history-info');
+
+      const initState = {
+        initRealAreaHasOriginalText: realArea.textContent.includes('Shopping List'),
+        initTestAreaHasOriginalText: testArea.value.includes('Shopping List'),
+        historyAfterInit: historyInfo.textContent,
+      };
+
+      testArea.value = `<div id="app">
+  <h1>Updated List</h1>
+  <ul>
+    <li class="done" data-key="item-1">Milk</li>
+    <li data-key="item-2">Eggs</li>
+    <li data-key="item-3">Bread</li>
+  </ul>
+  <p class="count">Still 3 items</p>
+</div>`;
+      patchButton.click();
+
+      const patchState = {
+        realAreaHasPatchedText: realArea.textContent.includes('Updated List'),
+        testAreaKeepsPatchedText: testArea.value.includes('Updated List'),
+        realAreaHasPatchedCount: realArea.textContent.includes('Still 3 items'),
+        historyAfterPatch: historyInfo.textContent,
+      };
+
+      undoButton.click();
+      const undoState = {
+        undoRealAreaHasOriginalText: realArea.textContent.includes('Shopping List'),
+        undoTestAreaHasOriginalText: testArea.value.includes('Shopping List'),
+        historyAfterUndo: historyInfo.textContent,
+      };
+
+      redoButton.click();
+      const redoState = {
+        realAreaHasUpdatedText: realArea.textContent.includes('Updated List'),
+        testAreaHasUpdatedText: testArea.value.includes('Updated List'),
+        historyAfterRedo: historyInfo.textContent,
+      };
+
+      assertEqual(
+        {
+          ...initState,
+          ...patchState,
+          ...undoState,
+          ...redoState,
+        },
+        {
+          initRealAreaHasOriginalText: true,
+          initTestAreaHasOriginalText: true,
+          historyAfterInit: '히스토리: 1 / 1',
+          realAreaHasPatchedText: true,
+          testAreaKeepsPatchedText: true,
+          realAreaHasPatchedCount: true,
+          historyAfterPatch: '히스토리: 2 / 2',
+          undoRealAreaHasOriginalText: true,
+          undoTestAreaHasOriginalText: true,
+          historyAfterUndo: '히스토리: 1 / 2',
+          realAreaHasUpdatedText: true,
+          testAreaHasUpdatedText: true,
+          historyAfterRedo: '히스토리: 2 / 2',
+        },
+        '초기화부터 Patch, Undo, Redo까지 요구사항의 핵심 흐름이 동작한다',
+        {
+          input: 'Init -> Patch -> Undo -> Redo flow',
+          reactCompare: '실무에서는 이력 이동 시 화면 일부만 바뀌는 반쪽짜리 상태 불일치가 자주 버그가 되므로, 여러 표시 영역의 동기화 검증이 중요하다.',
+        }
+      );
+    } finally {
+      cleanupAppSandbox();
+    }
+  });
+});
+
+renderResults();
+</script>
+</body>
+</html>
