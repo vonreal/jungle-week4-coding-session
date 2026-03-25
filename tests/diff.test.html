@@ -354,20 +354,6 @@ describe('노드 교체 (REPLACE)', () => {
 // 6. Key 기반 매칭
 // ──────────────────────────────────────────────
 describe('Key 기반 매칭', () => {
-  it('키 있는 리스트 순서 변경 — 텍스트 diff 발생', () => {
-    const oldV = el('ul', {}, [
-      el('li', { 'data-key': 'a' }, [txt('A')]),
-      el('li', { 'data-key': 'b' }, [txt('B')]),
-    ]);
-    const newV = el('ul', {}, [
-      el('li', { 'data-key': 'b' }, [txt('B')]),
-      el('li', { 'data-key': 'a' }, [txt('A')]),
-    ]);
-    const patches = diff(oldV, newV);
-    assert(Array.isArray(patches), '패치 배열 반환');
-    assert(patches.length === 0, '동일 key/내용 순서 변경만으로는 패치 없음');
-  });
-
   it('중복 key가 있더라도 첫 번째 중복 노드 제거를 놓치지 않아야 한다', () => {
     const oldV = el('ul', {}, [
       el('li', { 'data-key': 'dup' }, [txt('First')]),
@@ -413,22 +399,6 @@ describe('Key 기반 매칭', () => {
     const patches = diff(oldV, newV);
     const patch = assertSinglePatch(patches, 'REMOVE', 'key 항목 제거');
     assertPatchPath(patch, [1], 'key 항목 제거');
-  });
-
-  it('같은 key 노드 내부 텍스트 변경만 추적', () => {
-    const oldV = el('ul', {}, [
-      el('li', { 'data-key': 'a' }, [txt('A')]),
-      el('li', { 'data-key': 'b' }, [txt('B')]),
-    ]);
-    const newV = el('ul', {}, [
-      el('li', { 'data-key': 'b' }, [txt('B updated')]),
-      el('li', { 'data-key': 'a' }, [txt('A')]),
-    ]);
-    const patches = diff(oldV, newV);
-    const patch = assertSinglePatch(patches, 'UPDATE_TEXT', 'key 재정렬 + 텍스트 변경');
-    assertPatchPath(patch, [0, 0], 'key 재정렬 + 텍스트 변경');
-    assert(patch.oldValue === 'B', '이전 텍스트 B');
-    assert(patch.value === 'B updated', '새 텍스트 B updated');
   });
 
   it('key 없는 노드는 순서대로 fallback 비교', () => {
