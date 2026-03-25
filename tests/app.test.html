@@ -53,6 +53,7 @@
           <button id="btn-redo">Redo</button>
           <span id="history-info"></span>
         </div>
+        <div id="app-alert" hidden></div>
         <div id="real-area"></div>
         <textarea id="test-area"></textarea>
         <div id="diff-log"></div>
@@ -73,6 +74,7 @@
         diffLog: document.getElementById('diff-log'),
         vdomTree: document.getElementById('vdom-tree'),
         historyInfo: document.getElementById('history-info'),
+        appAlert: document.getElementById('app-alert'),
       };
     }
 
@@ -141,21 +143,14 @@
       assert(app.undoBtn.disabled === true, 'undo 상태가 그대로다');
     });
 
-    await runCase('patch: 파싱 가능한 루트 엘리먼트가 없으면 alert 후 중단한다', async () => {
+    await runCase('patch: 파싱 가능한 루트 엘리먼트가 없으면 인라인 에러를 표시하고 중단한다', async () => {
       const app = await bootApp('patch-invalid');
       const before = normalize(app.realArea.innerHTML);
-      const alerts = [];
-      const originalAlert = window.alert;
-      window.alert = (message) => alerts.push(message);
+      app.testArea.value = 'plain text only';
+      click(app.patchBtn);
 
-      try {
-        app.testArea.value = 'plain text only';
-        click(app.patchBtn);
-      } finally {
-        window.alert = originalAlert;
-      }
-
-      assert(alerts.length === 1, 'alert가 1회 호출된다');
+      assert(app.appAlert.hidden === false, '인라인 에러가 표시된다');
+      assert(app.appAlert.textContent.includes('유효한 HTML을 입력해주세요.'), '에러 문구가 표시된다');
       assert(normalize(app.realArea.innerHTML) === before, 'real DOM이 유지된다');
       assert(app.historyInfo.textContent.includes('1 / 1'), '히스토리가 증가하지 않는다');
     });
