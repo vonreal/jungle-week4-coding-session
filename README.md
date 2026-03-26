@@ -145,6 +145,7 @@ src/
 └── app.js      # UI 이벤트 및 전체 흐름 제어
 
 tests/
+├── test-runner.js     # 브라우저 기반 테스트 러너 스크립트
 ├── vdom.test.html     # DOM → VDOM 변환 정확성 검증
 ├── diff.test.html     # Diff 케이스별 patch 생성 검증
 ├── patch.test.html    # Patch 적용 후 실제 DOM 상태 검증
